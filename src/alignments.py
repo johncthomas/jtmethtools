@@ -10,6 +10,11 @@ from attrs import define, field
 from functools import cached_property
 
 
+from jtmethtools.util import (
+    Regions
+)
+
+
 def get_bismark_met_str(a: AlignedSegment) -> str:
     tag, met = a.get_tags()[2]
     assert tag == 'XM'
@@ -125,6 +130,30 @@ def get_ref_position(seq_i, ref_start, cigar):
     return None  # position not reached, or it's past the alignment
 
 
+def alignment_overlaps_region(
+        alignment: AlignedSegment,
+        regions: Regions) -> bool | str:
+    """Check if an alignment overlaps a region."""
+    ref = alignment.reference_name
+    try:
+        regStart, regEnd = regions.starts_ends_of_chrm(ref)
+    except KeyError:
+        logger.debug('Reference contig not found: ' + str(alignment.reference_name))
+        return False
+
+    m = (
+            (alignment.reference_start < regEnd)
+            & (alignment.reference_end > regStart)
+    )
+
+    isoverlap = np.any(m)
+
+    if isoverlap:
+        reg_name = regions.names[ref][m][0]
+        logger.trace(reg_name)
+        return reg_name
+    return False
+
 @define(frozen=True)
 class Alignment:
     a: AlignedSegment
@@ -192,6 +221,26 @@ class Alignment:
             return d1
         d2 = {k: l for k, l in self._iter_locus_metstr_bismark(a2)}
         return d1 | d2
+
+    def no_non_cpg(self) -> bool:
+        """look for forbidden methylation states.
+
+        Return True no H|X."""
+        values = set(self.metstr)
+        if (
+                ('H' in values)
+                or ('X' in values)
+                or ('U' in values)
+        ):
+            return False
+        return True
+
+    @cached_property
+    def hit_regions(self) -> set[str]:
+        regions = [alignment_overlaps_region(a, self.regions)
+                   for a in self.alignments]
+        regions = list(set([r for r in regions if r]))
+        return regions
 
 
 
@@ -289,4 +338,4 @@ def _test():
 
 if __name__ == '__main__':
     logger.remove()
-    #_test()
+    _test()
