@@ -1,8 +1,10 @@
 import typing
-from typing import Collection, Tuple, Literal
+from typing import Collection, Tuple, Self, Literal
 
 import pandas as pd
 import numpy as np
+import numpy.typing as npt
+from numpy.typing import NDArray
 import pysam
 from loguru import logger
 from pysam import AlignedSegment, AlignmentFile, AlignmentHeader
@@ -10,10 +12,108 @@ from attrs import define, field
 from functools import cached_property
 
 
-from jtmethtools.util import (
-    Regions
-)
+SplitTable = dict[str, pd.DataFrame]
 
+
+def fasta_to_dict(fn: str, full_desc=False) -> dict[str, str]:
+    """Dict that maps record_name->sequence.
+
+    By default splits the description on the first space, this should
+    give e.g. the chromosome name without extra metadata. Set full_desc
+    to false to include whole description lines in the keys.
+    """
+    with open(fn) as f:
+
+        gl = f.read().strip().split('\n')
+    genome = {}
+    chrm = None
+    nt = None
+    for line in gl:
+        if line[0] == '>':
+            if chrm is not None:
+                genome[chrm] = ''.join(nt)
+            chrm = line[1:]
+            if full_desc:
+                chrm = line[1:].split()[0]
+            nt = []
+        else:
+            nt.append(line.upper())
+    return genome
+
+
+
+def load_bismark_calls_table(fn) -> pd.DataFrame:
+    df = pd.read_csv(fn, sep='\t', header=None, dtype={2: str})
+    df.columns = ['ReadName', 'Methylated', 'Chromosome', 'Locus', 'Call']
+    return df
+
+
+def split_table_by_chrm(table:pd.DataFrame, chrm_col='Chrm') \
+        -> SplitTable:
+    """Split a table by chromosomes, returning dict keyed by each
+    chromosome."""
+    return {c: table.loc[table[chrm_col] == c] for c in table[chrm_col].unique()}
+
+
+def load_region_bed(fn):
+    regions = pd.read_csv(
+        fn, sep='\t', header=None,
+        dtype={'Chrm':str}
+    )
+    regions.columns = ['Chrm', 'Start', 'End', 'Name', ]
+
+    regions.set_index('Name', inplace=True, drop=False)
+    return regions
+
+
+@define
+class Regions:
+    """Region starts, ends and names stored in vectors
+    as attributes of the same names.
+
+    Create using Regions.from_file or .from_df
+
+    Methods:
+        starts_ends_of_chrm: get start and end vectors for a chromosome
+    """
+    starts: dict[str, NDArray[int]]
+    ends: dict[str, NDArray[int]]
+    names: dict[str, NDArray[str]]
+    thresholds: dict[str, float] = None
+    df: pd.DataFrame = None
+
+    @cached_property
+    def chromsomes(self) -> set[str]:
+        return set(self.df.Chrm.unique())
+
+    @classmethod
+    def from_table(cls, filename: str) -> Self:
+        df = pd.read_csv(filename, sep='\t')
+        return (cls.from_df(df))
+
+
+    @classmethod
+    def from_bed(cls, filename: str) -> Self:
+        df = load_region_bed(filename)
+        return cls.from_df(df)
+
+    @classmethod
+    def from_df(cls, df: pd.DataFrame) -> Self:
+        sdf = split_table_by_chrm(df)
+
+        return cls(
+            starts={k: sdf[k].Start.values for k in sdf},
+            ends={k: sdf[k].End.values for k in sdf},
+            names={k: sdf[k].Name.values for k in sdf},
+            thresholds=df.Threshold.to_dict() if 'Threshold' in df.columns.values else None,
+            df=df
+        )
+
+    def starts_ends_of_chrm(self, chrm) -> (NDArray[int], NDArray[int]):
+        return (self.starts[chrm], self.ends[chrm])
+
+    def get_region_threshold(self, name):
+        return self.thresholds[name]
 
 def get_bismark_met_str(a: AlignedSegment) -> str:
     tag, met = a.get_tags()[2]
@@ -235,12 +335,11 @@ class Alignment:
             return False
         return True
 
-    @cached_property
-    def hit_regions(self) -> set[str]:
-        regions = [alignment_overlaps_region(a, self.regions)
+    def hit_regions(self, regions:Regions) -> list[str]:
+        hits = [alignment_overlaps_region(a, regions)
                    for a in self.alignments]
-        regions = list(set([r for r in regions if r]))
-        return regions
+        hits = list(set([r for r in hits if r]))
+        return hits
 
 
 
@@ -329,12 +428,23 @@ def iter_bam(
 
 def _test():
     bamfn = '/home/jcthomas/data/canary/sorted_qname/CMDL19003169_1_val_1_bismark_bt2_pe.deduplicated.bam'
-
+    regfn = '/home/jcthomas/OneDrive/DevLab/NIMBUS/Reference/dmrs_extended_full_annotation_20200117.2_noZero.bed'
     for alignment in iter_bam(bamfn, (0, 6), paired_end=False):
         meth_by_locus = alignment.locus_methylation
         print(alignment.a.query_name)
         print(alignment.metstr)
         print(meth_by_locus.values())
+
+    # filter regions by bed and absence of CHH etc
+    # pysam AlignedSegment objects are alignment.a (and alignment.a2 if paired)
+    #   so use them for further filtering e.g. alignment.a.mapping_quality > 20
+    regions = Regions.from_bed(regfn)
+    count = 0
+    for alignment in iter_bam(bamfn, (0, 10000), paired_end=True):
+
+        if alignment.hit_regions(regions) and alignment.no_non_cpg():
+            count += 1
+    print(count)
 
 if __name__ == '__main__':
     logger.remove()
