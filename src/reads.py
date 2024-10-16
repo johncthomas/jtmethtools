@@ -10,7 +10,7 @@ import pysam
 from loguru import logger
 from pysam import AlignedSegment, AlignmentFile, AlignmentHeader
 from dataclasses import dataclass, field
-import pyarrow as pa
+#import pyarrow as pa
 
 def iter_pe_bam(
         bam:str|AlignmentFile,
