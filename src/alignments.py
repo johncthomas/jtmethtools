@@ -174,6 +174,33 @@ def get_ref_position(seq_i, ref_start, cigar):
     return None  # position not reached, or it's past the alignment
 
 
+def get_insertion_mask(a:AlignedSegment):
+    """
+    Returns a list where:
+    - 0 indicates a matched base (CIGAR operation 0),
+    - 1 indicates an inserted base (CIGAR operation 1).
+
+    Args:
+        a (pysam.AlignedSegment): The aligned read.
+
+    Returns:
+        list: A list of 0s and 1s indicating matched and inserted bases.
+    """
+    match_insertion_list = []
+
+    for (operation, length) in a.cigartuples:
+        if operation == 0:  # Match
+            match_insertion_list.extend([0] * length)
+        elif operation == 1:  # Insertion
+            match_insertion_list.extend([1] * length)
+        if not len(match_insertion_list) == a.query_length:
+            s = f"Query length did not match calculation. cigar={a.cigartuples}, readName={a.query_name}"
+            raise ValueError(s)
+        # else: continue or handle other operations based on requirements
+
+    return match_insertion_list
+
+
 @define(frozen=True)
 class Alignment:
     a: AlignedSegment
