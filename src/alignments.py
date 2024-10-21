@@ -139,10 +139,6 @@ def get_alignment_of_read(readname:str, bamfn:str) -> (AlignedSegment, AlignedSe
         return tuple(aligns)
 
 
-
-
-
-
 def get_ref_position(seq_i, ref_start, cigar):
     """Get the reference locus, taking insertions/deletions into account"""
     ref_pos = ref_start
