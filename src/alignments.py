@@ -269,6 +269,13 @@ class Alignment:
         d2 = {k: l for k, l in self._iter_locus_metstr_bismark(a2)}
         return d1 | d2
 
+    @cached_property
+    def hit_regions(self, regions:Regions) -> list[str]:
+        regions = [alignment_overlaps_region(a, regions)
+                   for a in self.alignments]
+        regions = list(set([r for r in regions if r]))
+        return regions
+
 
 
 def _iter_bam_pe(
