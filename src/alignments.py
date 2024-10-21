@@ -9,6 +9,55 @@ from pysam import AlignedSegment, AlignmentFile, AlignmentHeader
 from attrs import define, field
 from functools import cached_property
 
+logger.remove()
+
+
+@define
+class Regions:
+    """Region starts, ends and names stored in vectors
+    as attributes of the same names.
+
+    Create using Regions.from_file or .from_df
+    """
+    starts: dict[str, NDArray[int]]
+    ends: dict[str, NDArray[int]]
+    names: dict[str, NDArray[str]]
+    thresholds: dict[str, float] = None
+    df: pd.DataFrame = None
+
+    @cached_property
+    def chromsomes(self) -> set[str]:
+        return set(self.df.Chrm.unique())
+
+    @classmethod
+    def from_file(cls, filename: str) -> Self:
+        df = pd.read_csv(filename, sep='\t',)
+        df.set_index( 'Name', inplace=True, drop=False)
+        return (cls.from_df(df))
+
+
+    @classmethod
+    def from_bed(cls, filename: str) -> Self:
+        df = load_region_bed(filename)
+        return cls.from_df(df)
+
+    @classmethod
+    def from_df(cls, df: pd.DataFrame) -> Self:
+        sdf = split_table_by_chrm(df)
+
+        return cls(
+            starts={k: sdf[k].Start.values for k in sdf},
+            ends={k: sdf[k].End.values for k in sdf},
+            names={k: sdf[k].Name.values for k in sdf},
+            thresholds=df.Threshold.to_dict() if 'Threshold' in df.columns.values else None,
+            df=df
+        )
+
+    def starts_ends_of_chrm(self, chrm) -> (NDArray[int], NDArray[int]):
+        return (self.starts[chrm], self.ends[chrm])
+
+    def get_region_threshold(self, name):
+        return self.thresholds[name]
 
 def get_bismark_met_str(a: AlignedSegment) -> str:
     tag, met = a.get_tags()[2]

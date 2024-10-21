@@ -8,58 +8,38 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 import pysam
 from loguru import logger
+from pyarrow.ipc import ReadStats
 from pysam import AlignedSegment, AlignmentFile, AlignmentHeader
-from dataclasses import dataclass, field
-#import pyarrow as pa
+#from dataclasses import dataclass, field
+import pyarrow as pa
+import pyarrow.compute as pcomp
+from attrs import field, define
 
-def iter_pe_bam(
-        bam:str|AlignmentFile,
-        start_stop:Tuple[int, int]=(0, np.inf)
-) -> Tuple[AlignedSegment, AlignedSegment|None]:
-    """Iterate over a paired-end bam file, yielding pairs of alignments.
-    Where a read is unpaired, yield (alignment, None).
+from alignments import *
 
-    Use start_stop for splitting a bam file for, e.g. multiprocessing.
-    """
-    #todo test iter_pe_bam
-    if type(bam) is not AlignmentFile:
-        bam = pysam.AlignmentFile(bam, 'rb')
 
-    if not bam.header.get('HD', {}).get('SO', 'Unknown') == 'queryname':
-        raise RuntimeError(f'BAM file must be sorted by queryname')
-
-    aln_prev: pysam.AlignedSegment | None = None
-    for i, aln_current in enumerate(bam):
-        logger.debug(f'Alignment #{i}')
-        if i < start_stop[0]:
-            continue
-        elif i >= start_stop[1]:
-            return None
-
-        elif aln_prev is None:
-            aln_prev = aln_current
-            continue
-        elif aln_current.query_name == aln_prev.query_name:
-            yield aln_current, aln_prev
-            aln_prev = None
-        else:
-            yield aln_prev, None
-            aln_prev = aln_current
-
-    if aln_prev is not None:
-        yield aln_prev, None
-
-@dataclass(slots=True)
+@define(slots=True)
 class Loci:
-    chrm:str
     start:int
     end:int
+    chrm:str
 
     def to_kwargs(self):
         """dict with keys chrm, start, end."""
         return dict(chrm=self.chrm, start=self.start, end=self.end)
 
-#
+    def to_tuple(self):
+        """Returns: (start, end, chrm)"""
+        return (self.start, self.end, self.chrm)
+
+
+_ntcodes = dict(zip('ACGTN', np.array([1, 2, 3, 4, 0], dtype=np.uint8)))
+NT_CODES = _ntcodes | {v:k for k, v in _ntcodes.items()}
+
+_bsmk_codes = dict(zip('.ZHXU', np.array([0, 1, 2, 3, 4], dtype=np.uint8)))
+BISMARK_CODES = _bsmk_codes | {v:k for k, v in _bsmk_codes.items()}
+
+
 # vectors, read and locus level :
 #   readid[int], chrm[str], locus[int], state[bool]
 #   index of read start-end loci
@@ -72,63 +52,286 @@ class Loci:
 #   bam header
 #   hash of input bam
 # Vectors etc as parquet. Everything gets put in a zip
-ReadID = int
-ChrmName = str
-Locus = int
-MethylationStatus = bool
 
-@dataclass
-class MethylationData:
-    readid: NDArray[int]
-    readid_by_chrm: Mapping[ChrmName, NDArray[int]]
-    locus: Mapping[ChrmName, NDArray[Locus]]
-    methylation: Mapping[ChrmName, NDArray[MethylationStatus]]
-    read_location: Mapping[ReadID, Tuple[ChrmName, Locus, Locus]]
 
-    def iter_reads(self) -> NDArray[bool]:
-        for rid in self.readid:
-            yield self.methylation[rid]
+# **NOTE** If one of these changes, also change the numpy ndarrays
+# used as intermediates in creation.
+ReadIDArray = pa.UInt32Array
+LocusArray = pa.UInt32Array
+ChrmArray = pa.UInt8Array
+MapQArray = pa.UInt8Array
+NucleotideArray = pa.UInt8Array
+MethylationArray = pa.UInt8Array
+PhredArray = pa.UInt8Array
 
-    def metylation_by_readid(
-            self, read_id: int
-    ) -> NDArray[bool]:
-        chrm, start, stop = self.read_location[read_id]
-        return self.methylation[chrm][start:stop]
 
-    @lru_cache(maxsize=128)
-    def loci_mask(self, chrm, start, end):
-        loci = self.locus[chrm]
-        mask = (loci >= start) & (loci < end)
-        return mask
+class ReadMetadata:
+    def __init__(
+            self,
+            table:pa.Table
+    ):
+        """Table holds start, end, chromosome, mapping quality,
+        optionally original str read name"""
 
-    @lru_cache(maxsize=10)
-    def read_methylation_at_loci(
-            self, chrm:ChrmName, start:Locus, End:Locus
-    ) -> tuple[NDArray[int], NDArray[bool], NDArray[int]]:
-        """Returned arrays give loci, and methylation state at
-        those loci for each read that overlaps the given range."""
-        mask = self.loci_mask(chrm, start, End)
-        loci = self.locus[chrm][mask]
-        met = self.methylation[chrm][mask]
-        rids = self.readid_by_chrm[chrm][mask]
-        return rids, met, loci
+        self.table = table
 
-    @lru_cache
-    def image(self, ):
+    @property
+    def readID(self) -> ReadIDArray:
+        return self.table.column("readID")
 
-        # in:
-            # positionsA = np.array([100, 105, 110, 121, 100, 110, 121, 122])
-            # stateA = np.array([1, 2, 3, 4, 5, 6, 7, 8])
-            # vecid = np.array([1, 1, 1, 1, 2, 2, 2, 2])
-        # out:
-        #   [[1, 2, 3, 4, nan],
-        #    [5, nan, 6, 7, 8]
+    @property
+    def start(self) -> LocusArray:
+        return self.table.column("start")
+
+    @property
+    def end(self) -> LocusArray:
+        return self.table.column("end")
+
+    @property
+    def chrm(self) -> ChrmArray:
+        return self.table.column("chrm")
+
+    @property
+    def mapping_qual(self) -> MapQArray:
+        return self.table.column("mapping_quality")
+
+    @property
+    def read_name(self) -> pa.StringArray:
+        return self.table.column("read_name")
+
+    @lru_cache(255)
+    def loci_from_readID(self, readID:int) -> Loci:
+        row = self.table.slice(readId, readID)
+        return Loci(
+            start=row.column('start'),
+            end=row.columns('end'),
+            chrm=row.columns('chrm')
+        )
+
+    @lru_cache(255)
+    def readIDs_from_loci(self, start:int, end:int, chrm:int) -> pa.Int32Array:
+
+        condition1 = pc.less_equal(self.table.column("start"), pa.scalar(end))
+        condition2 = pc.greater_equal(self.table.column("end"), pa.scalar(start))
+        condition3 = pc.equal(self.table.column("chrm"), pa.scalar(chrm))
+
+        # combine the conditions
+        combined_condition = pc.and_(pc.and_(condition1, condition2), condition3)
+
+        # Filter the table to get rows where all conditions are true
+        filtered_readIDs = pc.filter(self.table.column("readID"), combined_condition)
+
+        # Return the filtered readIDs (which will be a pyarrow.Array)
+        return filtered_readIDs
+
+
+@define
+class LocusData:
+
+    table: pa.Table
+
+    @property
+    def nucleotide(self) -> NucleotideArray:
+        return self.table.column("nucleotide")
+
+    @property
+    def phred_scores(self) -> PhredArray:
+        return self.table.column("phred_scores")
+
+    @property
+    def chrm(self) -> ChrmArray:
+        return self.table.column("chrm")
+
+    @property
+    def locus(self) -> LocusArray:
+        return self.table.column("locus")
+
+    @property
+    def readID(self) -> ReadIDArray:
+        return self.table.column("readID")
+
+    @property
+    def methylation(self) -> MethylationArray:
+        return self.table.column("methylation")
+
+    @property
+    def is_insertion(self) -> pa.BooleanArray:
+        return self.table.column('is_insertion')
+
+
+@define
+class ReadData:
+    def __init__(self, loci:LocusData, read:ReadMetadata):
+        self.loci = locus_table
+        self.read = read
+
+
+    def loci_by_readID(self, readID:int) -> Loci:
+        return self.read.loci_from_readID(readID)
+
+    @lru_cache(16)
+    def reads_at_loci(self, loci:Loci):
+        self.read.reads_at_loci(loci)
+
+    @lru_cache(16)
+    def readIDs_from_loci(self,):
+        self.read.reads_at_loci()
+
+    # @lru_cache(maxsize=128)
+    # def loci_mask(self, chrm, start, end):
+    #     loci = self.locus[chrm]
+    #     mask = (loci >= start) & (loci < end)
+    #     return mask
+
+    # def iter_reads(self) -> NDArray[bool]:
+    #     for rid in self.readid:
+    #         yield self.methylation[rid]
+
+
+    # def metylation_by_readid(
+    #         self, read_id: int
+    # ) -> NDArray[bool]:
+    #     chrm, start, stop = self.read_location[read_id]
+    #     return self.methylation[chrm][start:stop]
+
+
+
+    # @lru_cache(maxsize=10)
+    # def read_methylation_at_loci(
+    #         self, chrm:ChrmName, start:Locus, End:Locus
+    # ) -> tuple[NDArray[int], NDArray[bool], NDArray[int]]:
+    #     """Returned arrays give loci, and methylation state at
+    #     those loci for each read that overlaps the given range."""
+    #     mask = self.loci_mask(chrm, start, End)
+    #     loci = self.locus[chrm][mask]
+    #     met = self.methylation[chrm][mask]
+    #     rids = self.readid_by_chrm[chrm][mask]
+    #     return rids, met, loci
+
+def _encode_string(string:str, codes:dict) -> NDArray[np.uint8]:
+    """Perform substitution of string to values in codes."""
+    nt_arr = np.zeros((len(string),), dtype=np.uint8)
+    for i, n in enumerate(string):
+        nt_arr[i] = codes[n]
+    return nt_arr
+
+def encode_nt_str(nts:str) -> NDArray[np.uint8]:
+    return _encode_string(nts, NT_CODES)
+
+def encode_metstr_bismark(metstr:str) -> NDArray[np.uint8]:
+    return _encode_string(nts, BISMARK_CODES)
+
+
+def print_memory_footprint():
+    import psutil
+    import os
+
+    # Get the current process
+    process = psutil.Process(os.getpid())
+
+    # Get memory usage in bytes (can also use process.memory_info().rss for just resident memory)
+    memory_usage = process.memory_info().rss  # in bytes
+
+    # Convert to megabytes (MB) for easier readability
+    memory_usage_mb = memory_usage / (1024 ** 2)
+
+    print(f"Memory usage: {memory_usage_mb:.2f} MB")
+
+def process_bam_to_ndarrays(bamfn, regionsfn:str) -> dict[str, NDArray]:
+    # for recording things that should go in the final object
+    data = {}
+
+    # get the number of reads and the number of aligned bases
+    n_reads = 0
+    n_bases = 0
+    paired = False
+    regions = Regions.from_file(regionsfn)
+
+    chrm_map = {}
+    for i, c in enumerate(Regions.chromsomes):
+        chrm_map[i] = c
+        chrm_map[c] = i
+
+    data['chrm_map'] = chrm_map
+
+    print('Before creating creating empty arrays:')
+    print_memory_footprint()
+
+    for aln in iter_bam(bamfn, paired_end=paired):
+        aln:Alignment
+
+        hit_regns = aln.hit_regions(regions)
+
+        if hit_regns:
+            n_reads += 1
+            n_bases += aln.a.query_length
+
+
+    read_arrays = dict(
+        readID=np.zeros(dtype=np.uint32, shape=(n_reads,)),
+        start=np.zeros(dtype=np.uint32, shape=(n_reads,)),
+        end=np.zeros(dtype=np.uint32, shape=(n_reads,)),
+        chrm=np.zeros(dtype=np.uint8, shape=(n_reads,)),
+        mapping_qual=np.zeros(dtype=np.uint8, shape=(n_reads,)),
+    )
+    loci_arrays = dict(
+        nucleotide=np.zeros(dtype=np.uint8, shape=(n_bases,)),
+        phred_scores=np.zeros(dtype=np.uint8, shape=(n_bases,)),
+        chromosome=np.zeros(dtype=np.uint8, shape=(n_bases,)),
+        locus=np.zeros(dtype=np.uint32, shape=(n_bases,)),
+        readID=np.zeros(dtype=np.uint32, shape=(n_bases,)),
+        methylation=np.zeros(dtype=np.uint8, shape=(n_bases,)),
+        is_insertion=np.zeros(dtype=np.uint8, shape=(n_bases,))
+    )
+
+    print('After:')
+    print_memory_footprint()
+
+    read_i = -1
+    locus_i_next = 0
+    for readID, aln in enumerate(iter_bam(bamfn, paired_end=paired)):
+        aln:Alignment
+
+        if not aln.hit_regions(regions):
+            continue
+
+        # deal with the table indicies
+        read_i += 1
+        locus_i = locus_i_next
+        locus_j = locus_i + aln.a.query_length
+        locus_i_next = locus_j
+
+        read_arrays['readID'][read_i] = readID
+        read_arrays['mapping_qual'][read_i] = aln.a.mapping_quality
+        read_arrays['start'][read_i] = aln.a.reference_start
+        read_arrays['end'][read_i] = aln.a.reference_end
+        read_arrays['chrm'][read_i] = aln.a.reference_id
+        #read_arrays['read_name'][read_i] = a.a.query_name
+
+        loci_arrays['nucleotide'][locus_i:locus_j] = encode_nt_str(aln.a.query_sequence, )
+        loci_arrays['phred_scores'][locus_i:locus_j] = np.array(aln.a.query_qualities, dtype=np.uint8)
+        loci_arrays['chromosome'][locus_i:locus_j] = aln.a.reference_id
+        loci_arrays['locus'][locus_i:locus_j] = aln.a.get_reference_positions()
+        loci_arrays['readID'][locus_i:locus_j] = readID
+        loci_arrays['methylation'][locus_i:locus_j] = encode_metstr_bismark(aln.metstr)
+        loci_arrays['is_insertion'][locus_i:locus_j] = np.array(get_insertion_mask(aln.a), dtype=np.uint8)
+
+
+# THINGS to TEST
+# do the is_insertion == 1 match the insertions in the locus.
+
+
+
+
+
+
+
 
 
 
 @dataclass(slots=True)
 class Pileup:
-    data: MethylationData
+    data: LocusData
     loci: Loci
 
     #@cached_property # req attrs
@@ -180,3 +383,4 @@ def rearrange_data(positions, states, rowids):
 #
 # result_array = rearrange_data(positionsA, stateA, rowid)
 
+process_bam_to_ndarrays('/home/jaytee/DevLab/NIMBUS/Data/test/bismark_10k.sorted.bam')
