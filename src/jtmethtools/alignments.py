@@ -1,5 +1,6 @@
 import typing
-from typing import Collection, Tuple, Literal
+from typing import Collection, Tuple, Literal, Self
+from numpy.typing import NDArray
 
 import pandas as pd
 import numpy as np
@@ -9,6 +10,55 @@ from pysam import AlignedSegment, AlignmentFile, AlignmentHeader
 from attrs import define, field
 from functools import cached_property
 
+logger.remove()
+
+
+@define
+class Regions:
+    """Region starts, ends and names stored in vectors
+    as attributes of the same names.
+
+    Create using Regions.from_file or .from_df
+    """
+    starts: dict[str, NDArray[int]]
+    ends: dict[str, NDArray[int]]
+    names: dict[str, NDArray[str]]
+    thresholds: dict[str, float] = None
+    df: pd.DataFrame = None
+
+    @cached_property
+    def chromsomes(self) -> set[str]:
+        return set(self.df.Chrm.unique())
+
+    @classmethod
+    def from_file(cls, filename: str) -> Self:
+        df = pd.read_csv(filename, sep='\t',)
+        df.set_index( 'Name', inplace=True, drop=False)
+        return (cls.from_df(df))
+
+
+    @classmethod
+    def from_bed(cls, filename: str) -> Self:
+        df = load_region_bed(filename)
+        return cls.from_df(df)
+
+    @classmethod
+    def from_df(cls, df: pd.DataFrame) -> Self:
+        sdf = split_table_by_chrm(df)
+
+        return cls(
+            starts={k: sdf[k].Start.values for k in sdf},
+            ends={k: sdf[k].End.values for k in sdf},
+            names={k: sdf[k].Name.values for k in sdf},
+            thresholds=df.Threshold.to_dict() if 'Threshold' in df.columns.values else None,
+            df=df
+        )
+
+    def starts_ends_of_chrm(self, chrm) -> (NDArray[int], NDArray[int]):
+        return (self.starts[chrm], self.ends[chrm])
+
+    def get_region_threshold(self, name):
+        return self.thresholds[name]
 
 from jtmethtools.util import (
     Regions
@@ -95,10 +145,6 @@ def get_alignment_of_read(readname:str, bamfn:str) -> (AlignedSegment, AlignedSe
         return tuple(aligns)
 
 
-
-
-
-
 def get_ref_position(seq_i, ref_start, cigar):
     """Get the reference locus, taking insertions/deletions into account"""
     ref_pos = ref_start
@@ -129,30 +175,6 @@ def get_ref_position(seq_i, ref_start, cigar):
 
     return None  # position not reached, or it's past the alignment
 
-
-def alignment_overlaps_region(
-        alignment: AlignedSegment,
-        regions: Regions) -> bool | str:
-    """Check if an alignment overlaps a region."""
-    ref = alignment.reference_name
-    try:
-        regStart, regEnd = regions.starts_ends_of_chrm(ref)
-    except KeyError:
-        logger.debug('Reference contig not found: ' + str(alignment.reference_name))
-        return False
-
-    m = (
-            (alignment.reference_start < regEnd)
-            & (alignment.reference_end > regStart)
-    )
-
-    isoverlap = np.any(m)
-
-    if isoverlap:
-        reg_name = regions.names[ref][m][0]
-        logger.trace(reg_name)
-        return reg_name
-    return False
 
 @define(frozen=True)
 class Alignment:
@@ -338,4 +360,4 @@ def _test():
 
 if __name__ == '__main__':
     logger.remove()
-    _test()
+    #_test()
