@@ -1,5 +1,6 @@
 import typing
-from typing import Collection, Tuple, Literal
+from typing import Collection, Tuple, Literal, Self
+from numpy.typing import NDArray
 
 import pandas as pd
 import numpy as np
