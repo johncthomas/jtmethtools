@@ -65,6 +65,7 @@ MethylationArray = pa.UInt8Array
 PhredArray = pa.UInt8Array
 
 
+
 class ReadMetadata:
     def __init__(
             self,
@@ -316,6 +317,41 @@ def process_bam_to_ndarrays(bamfn, regionsfn:str) -> dict[str, NDArray]:
         loci_arrays['methylation'][locus_i:locus_j] = encode_metstr_bismark(aln.metstr)
         loci_arrays['is_insertion'][locus_i:locus_j] = np.array(get_insertion_mask(aln.a), dtype=np.uint8)
 
+    pa_read_arrays = {}
+    # create pa arrays, using correct dtype
+    pa_read_arrays['readID'] = ReadIDArray(read_arrays['readID'])
+    pa_read_arrays['start'] = LocusArray(read_arrays['start'])
+    pa_read_arrays['end'] = LocusArray(read_arrays['end'])
+    pa_read_arrays['chrm'] = ChrmArray(read_arrays['chrm'])
+    pa_read_arrays['mapping_qual'] = MapQArray(read_arrays['mapping_qual'])
+
+    # get things out of memory asap
+    del read_arrays
+    read_metadata = ReadMetadata(
+        pa.Table.from_pydict(pa_read_arrays)
+    )
+    del pa_read_arrays
+
+    pa_loci_arrays = {}
+    pa_loci_arrays['nucleotide'] = NucleotideArray(loci_arrays['nucleotide'])
+    pa_loci_arrays['phred_scores'] = PhredArray(loci_arrays['phred_scores'])
+    pa_loci_arrays['chromosome'] = ChrmArray(loci_arrays['chromosome'])
+    pa_loci_arrays['locus'] = LocusArray(loci_arrays['locus'])
+    pa_loci_arrays['readID'] = ReadIDArray(loci_arrays['readID'])
+    pa_loci_arrays['methylation'] = MethylationArray(loci_arrays['methylation'])
+    pa_loci_arrays['is_insertion'] = MethylationArray(loci_arrays['is_insertion'])
+    del loci_arrays
+
+    read_metadata = ReadMetadata(
+        pa.Table.from_pydict(pa_read_arrays)
+    )
+    loci_data = LocusData(
+        pa.Table.from_pydict(pa_loci_arrays)
+    )
+
+    return dict(read_metadata=read_metadata, loci_data=loci_data)
+
+
 
 # THINGS to TEST
 # do the is_insertion == 1 match the insertions in the locus.
@@ -383,4 +419,7 @@ def rearrange_data(positions, states, rowids):
 #
 # result_array = rearrange_data(positionsA, stateA, rowid)
 
-process_bam_to_ndarrays('/home/jaytee/DevLab/NIMBUS/Data/test/bismark_10k.sorted.bam')
+process_bam_to_ndarrays(
+    '/home/jaytee/DevLab/NIMBUS/Data/test/bismark_10k.sorted.bam',
+    '/home/jaytee/DevLab/NIMBUS/Reference/regions-table.canary.4k.tsv'
+)
