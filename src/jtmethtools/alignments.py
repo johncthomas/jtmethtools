@@ -285,9 +285,8 @@ class Alignment:
             return False
         return True
 
-    @cached_property
-    def hit_regions(self) -> set[str]:
-        regions = [alignment_overlaps_region(a, self.regions)
+    def hit_regions(self, regions:Regions) -> list[str]:
+        regions = [alignment_overlaps_region(a, regions)
                    for a in self.alignments]
         regions = list(set([r for r in regions if r]))
         return regions
