@@ -68,9 +68,29 @@ class Regions:
     def get_region_threshold(self, name):
         return self.thresholds[name]
 
-from jtmethtools.util import (
-    Regions
-)
+def alignment_overlaps_region(
+        alignment: AlignedSegment,
+        regions: Regions) -> bool | str:
+    """Check if an alignment overlaps a region."""
+    ref = alignment.reference_name
+    try:
+        regStart, regEnd = regions.starts_ends_of_chrm(ref)
+    except KeyError:
+        logger.trace('Reference contig not found: ' + str(alignment.reference_name))
+        return False
+
+    m = (
+            (alignment.reference_start < regEnd)
+            & (alignment.reference_end > regStart)
+    )
+
+    isoverlap = np.any(m)
+
+    if isoverlap:
+        reg_name = regions.names[ref][m][0]
+        logger.trace(reg_name)
+        return reg_name #its fine
+    return False
 
 
 def get_bismark_met_str(a: AlignedSegment) -> str:
