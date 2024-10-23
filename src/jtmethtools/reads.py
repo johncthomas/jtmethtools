@@ -1,22 +1,35 @@
+import pathlib
+from os import PathLike
+import os
+from pathlib import Path
 import typing
 from dataclasses import dataclass
 from functools import cached_property, lru_cache
 from typing import Collection, Tuple, Mapping
+import tarfile
 
-import pandas as pd
+import attrs
+from loguru import logger
+
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+
 import pysam
-from loguru import logger
-from pyarrow.ipc import ReadStats
 from pysam import AlignedSegment, AlignmentFile, AlignmentHeader
-#from dataclasses import dataclass, field
+
 import pyarrow as pa
-import pyarrow.compute as pcomp
+import pyarrow.compute as pc
+from pyarrow import parquet
+
 from attrs import field, define
 
-from alignments import *
+from jtmethtools.alignments import (
+    Alignment,
+    iter_bam,
+    Regions,
+)
 
+Pathesque = str | Path | PathLike[str]
 
 @define(slots=True)
 class Loci:
@@ -65,6 +78,19 @@ MethylationArray = pa.UInt8Array
 PhredArray = pa.UInt8Array
 
 
+@lru_cache(maxsize=128)
+def loci_mask(
+        target_loci:LocusArray, target_chrm:ChrmArray,
+        start:int, end:int, chrm:int):
+
+    # (loci >= start) & (loci < end)
+    loc_m = pc.and_(pc.greater_equal(target_loci, pa.scalar(start)),
+                    pc.less(target_loci, pa.scalar(end)))
+    chrm_m = pc.equal(target_chrm, pa.scalar(chrm))
+    return pc.and_(loc_m, chrm_m)
+
+
+
 
 class ReadMetadata:
     def __init__(
@@ -102,7 +128,7 @@ class ReadMetadata:
 
     @lru_cache(255)
     def loci_from_readID(self, readID:int) -> Loci:
-        row = self.table.slice(readId, readID)
+        row = self.table.slice(readID, readID)
         return Loci(
             start=row.column('start'),
             end=row.columns('end'),
@@ -110,8 +136,7 @@ class ReadMetadata:
         )
 
     @lru_cache(255)
-    def readIDs_from_loci(self, start:int, end:int, chrm:int) -> pa.Int32Array:
-
+    def read_ids_at_loci(self, start:int, end:int, chrm:int) -> pa.Int32Array:
         condition1 = pc.less_equal(self.table.column("start"), pa.scalar(end))
         condition2 = pc.greater_equal(self.table.column("end"), pa.scalar(start))
         condition3 = pc.equal(self.table.column("chrm"), pa.scalar(chrm))
@@ -125,11 +150,36 @@ class ReadMetadata:
         # Return the filtered readIDs (which will be a pyarrow.Array)
         return filtered_readIDs
 
+    def to_parquet(self, fn: str|Path):
+        """Write table in Parquet format"""
+        parquet.write_table(self.table, fn)
+
+    @classmethod
+    def from_parquet(cls, fn: Pathesque):
+        """Read table from Parquet format"""
+        return cls(parquet.read_table(fn))
+
+    def to_dir(self, directory: str | Path):
+        directory = pathlib.Path(directory)
+        os.makedirs(directory, exist_ok=True)
+        self.to_parquet(directory / 'read-metadata.parquet')
+        # with open(directory / 'read-attributes.dict', 'w') as f:
+        #     f.write(str({...}))
+
+    @classmethod
+    def from_dir(cls, directory: str | Path):
+        directory = pathlib.Path(directory)
+        table = parquet.read_table(directory / 'loci-data.parquet')
+        # with open(directory / 'read-attributes.dict'', 'r') as f:
+        #     d = eval(f.read())
+        return cls(table)
+
 
 @define
 class LocusData:
 
     table: pa.Table
+    chrm_map: dict
 
     @property
     def nucleotide(self) -> NucleotideArray:
@@ -159,30 +209,89 @@ class LocusData:
     def is_insertion(self) -> pa.BooleanArray:
         return self.table.column('is_insertion')
 
+    def to_parquet(self, fn:Path|str):
+        """Write table in Parquet format"""
+        parquet.write_table(self.table, fn)
+
+    def to_dir(self, directory:str|Path):
+        directory = pathlib.Path(directory)
+        os.makedirs(directory, exist_ok=True)
+        self.to_parquet(directory/'loci-data.parquet')
+        with open(directory/'locus-attributes.dict', 'w') as f:
+            f.write(str({'chrm_map':self.chrm_map}))
+
+    @classmethod
+    def from_dir(cls, directory:str|Path):
+        directory = pathlib.Path(directory)
+        table = parquet.read_table(directory/'loci-data.parquet')
+        with open(directory/'locus-attributes.dict', 'r') as f:
+            d = eval(f.read())
+        return cls(table, **d)
+
+    @classmethod
+    def from_parquet(cls, fn:str|Path):
+        """Read table from Parquet format"""
+        return cls(parquet.read_table(fn))
+
+
 
 @define
 class ReadData:
-    def __init__(self, loci:LocusData, read:ReadMetadata):
-        self.loci = locus_table
-        self.read = read
+    loci:LocusData
+    read:ReadMetadata
+    bam_fn:str
+    bam_header:str
+    version:int = 1 #increment when attributes change
 
+    def _get_nontable_attr(self):
+        d = attrs.asdict(self)
+        del d['loci']
+        del d['read']
+        return d
 
     def loci_by_readID(self, readID:int) -> Loci:
         return self.read.loci_from_readID(readID)
 
     @lru_cache(16)
-    def reads_at_loci(self, loci:Loci):
-        self.read.reads_at_loci(loci)
+    def reads_at_loci(self, start, end, chrm):
+        reads_ids = self.read.read_ids_at_loci(start, end, chrm)
 
-    @lru_cache(16)
-    def readIDs_from_loci(self,):
-        self.read.reads_at_loci()
+    def to_dir(self, directory:Pathesque):
+        directory = pathlib.Path(directory)
+        os.makedirs(directory, exist_ok=True)
+        self.loci.to_dir(directory)
+        self.read.to_dir(directory)
+        # add the rest
+        d = self._get_nontable_attr()
 
-    # @lru_cache(maxsize=128)
-    # def loci_mask(self, chrm, start, end):
-    #     loci = self.locus[chrm]
-    #     mask = (loci >= start) & (loci < end)
-    #     return mask
+        with open(directory/'short-fields.dict', 'w') as f:
+            f.write(str(d))
+
+    @classmethod
+    def from_dir(cls, directory:Pathesque):
+        directory = pathlib.Path(directory)
+        loci = LocusData.from_dir(directory)
+        read = ReadMetadata.from_dir(directory)
+
+        with open(directory/'short-fields.dict', 'r') as f:
+            d = eval(f.read())
+
+        return cls(loci, read, **d)
+
+    def print_heads(self, n=5) -> None:
+        print('Read table:')
+        print(self.read.table.slice(0, n))
+        print('\n++++\n')
+        print('Loci table:')
+        print(self.loci.table.slice(0, n))
+
+
+    def loci_mask(self, start:int, end:int, chrm:str):
+        return loci_mask(self.loci.locus, self.loci.chrm,
+                  start, end, self.loci.chrm_map[chrm])
+
+
+
 
     # def iter_reads(self) -> NDArray[bool]:
     #     for rid in self.readid:
@@ -194,7 +303,6 @@ class ReadData:
     # ) -> NDArray[bool]:
     #     chrm, start, stop = self.read_location[read_id]
     #     return self.methylation[chrm][start:stop]
-
 
 
     # @lru_cache(maxsize=10)
@@ -209,18 +317,49 @@ class ReadData:
     #     rids = self.readid_by_chrm[chrm][mask]
     #     return rids, met, loci
 
+
 def _encode_string(string:str, codes:dict) -> NDArray[np.uint8]:
     """Perform substitution of string to values in codes."""
     nt_arr = np.zeros((len(string),), dtype=np.uint8)
     for i, n in enumerate(string):
-        nt_arr[i] = codes[n]
+        try:
+            nt_arr[i] = codes[n]
+        except KeyError:
+            pass
     return nt_arr
 
 def encode_nt_str(nts:str) -> NDArray[np.uint8]:
     return _encode_string(nts, NT_CODES)
 
 def encode_metstr_bismark(metstr:str) -> NDArray[np.uint8]:
-    return _encode_string(nts, BISMARK_CODES)
+    return _encode_string(metstr, BISMARK_CODES)
+
+
+def get_insertion_mask(a:AlignedSegment):
+    """
+    Returns a list where:
+    - 0 indicates a matched base (CIGAR operation 0),
+    - 1 indicates an inserted base (CIGAR operation 1).
+
+    Args:
+        a (pysam.AlignedSegment): The aligned read.
+
+    Returns:
+        list: A list of 0s and 1s indicating matched and inserted bases.
+    """
+    match_insertion_list = []
+
+    for (operation, length) in a.cigartuples:
+        if operation == 0:  # Match
+            match_insertion_list.extend([0] * length)
+        elif operation == 1:  # Insertion
+            match_insertion_list.extend([1] * length)
+        if not len(match_insertion_list) == a.query_length:
+            s = f"Query length did not match calculation. cigar={a.cigartuples}, readName={a.query_name}"
+            raise ValueError(s)
+        # else: continue or handle other operations based on requirements
+
+    return match_insertion_list
 
 
 def print_memory_footprint():
@@ -238,22 +377,23 @@ def print_memory_footprint():
 
     print(f"Memory usage: {memory_usage_mb:.2f} MB")
 
-def process_bam_to_ndarrays(bamfn, regionsfn:str) -> dict[str, NDArray]:
-    # for recording things that should go in the final object
-    data = {}
+def process_bam_to_readdata(bamfn, regionsfn:str) -> ReadData:
 
     # get the number of reads and the number of aligned bases
     n_reads = 0
     n_bases = 0
     paired = False
-    regions = Regions.from_file(regionsfn)
+    if regionsfn.endswith('.tsv'):
+        regions = Regions.from_file(regionsfn)
+    else:
+        regions = Regions.from_bed(regionsfn)
 
     chrm_map = {}
-    for i, c in enumerate(Regions.chromsomes):
+    for i, c in enumerate(regions.chromsomes):
         chrm_map[i] = c
         chrm_map[c] = i
 
-    data['chrm_map'] = chrm_map
+
 
     print('Before creating creating empty arrays:')
     print_memory_footprint()
@@ -267,11 +407,13 @@ def process_bam_to_ndarrays(bamfn, regionsfn:str) -> dict[str, NDArray]:
             n_reads += 1
             n_bases += aln.a.query_length
 
+    # this dtype has implications...
+    locus_dtype = np.uint32
 
     read_arrays = dict(
         readID=np.zeros(dtype=np.uint32, shape=(n_reads,)),
-        start=np.zeros(dtype=np.uint32, shape=(n_reads,)),
-        end=np.zeros(dtype=np.uint32, shape=(n_reads,)),
+        start=np.zeros(dtype=locus_dtype, shape=(n_reads,)),
+        end=np.zeros(dtype=locus_dtype, shape=(n_reads,)),
         chrm=np.zeros(dtype=np.uint8, shape=(n_reads,)),
         mapping_qual=np.zeros(dtype=np.uint8, shape=(n_reads,)),
     )
@@ -288,9 +430,12 @@ def process_bam_to_ndarrays(bamfn, regionsfn:str) -> dict[str, NDArray]:
     print('After:')
     print_memory_footprint()
 
+
+    max32 = np.iinfo(locus_dtype).max
     read_i = -1
     locus_i_next = 0
-    for readID, aln in enumerate(iter_bam(bamfn, paired_end=paired)):
+    alignmentfile = pysam.AlignmentFile(bamfn)
+    for readID, aln in enumerate(iter_bam(alignmentfile, paired_end=paired)):
         aln:Alignment
 
         if not aln.hit_regions(regions):
@@ -312,75 +457,73 @@ def process_bam_to_ndarrays(bamfn, regionsfn:str) -> dict[str, NDArray]:
         loci_arrays['nucleotide'][locus_i:locus_j] = encode_nt_str(aln.a.query_sequence, )
         loci_arrays['phred_scores'][locus_i:locus_j] = np.array(aln.a.query_qualities, dtype=np.uint8)
         loci_arrays['chromosome'][locus_i:locus_j] = aln.a.reference_id
-        loci_arrays['locus'][locus_i:locus_j] = aln.a.get_reference_positions()
+        ref_p = aln.a.get_reference_positions(full_length=True)
+        ref_p = np.array([locus_dtype(n) if n is not None else max32 for n in ref_p])
+        loci_arrays['locus'][locus_i:locus_j] = ref_p
         loci_arrays['readID'][locus_i:locus_j] = readID
         loci_arrays['methylation'][locus_i:locus_j] = encode_metstr_bismark(aln.metstr)
-        loci_arrays['is_insertion'][locus_i:locus_j] = np.array(get_insertion_mask(aln.a), dtype=np.uint8)
+        loci_arrays['is_insertion'][locus_i:locus_j] = ref_p ==  max32
 
-    pa_read_arrays = {}
-    # create pa arrays, using correct dtype
-    pa_read_arrays['readID'] = ReadIDArray(read_arrays['readID'])
-    pa_read_arrays['start'] = LocusArray(read_arrays['start'])
-    pa_read_arrays['end'] = LocusArray(read_arrays['end'])
-    pa_read_arrays['chrm'] = ChrmArray(read_arrays['chrm'])
-    pa_read_arrays['mapping_qual'] = MapQArray(read_arrays['mapping_qual'])
-
+    pa_read_arrays = {
+        'readID': pa.array(read_arrays['readID']),
+        'start': pa.array(read_arrays['start']),
+        'end': pa.array(read_arrays['end']),
+        'chrm': pa.array(read_arrays['chrm']),
+        'mapping_qual': pa.array(read_arrays['mapping_qual'])
+    }
     # get things out of memory asap
     del read_arrays
+
     read_metadata = ReadMetadata(
         pa.Table.from_pydict(pa_read_arrays)
     )
     del pa_read_arrays
 
-    pa_loci_arrays = {}
-    pa_loci_arrays['nucleotide'] = NucleotideArray(loci_arrays['nucleotide'])
-    pa_loci_arrays['phred_scores'] = PhredArray(loci_arrays['phred_scores'])
-    pa_loci_arrays['chromosome'] = ChrmArray(loci_arrays['chromosome'])
-    pa_loci_arrays['locus'] = LocusArray(loci_arrays['locus'])
-    pa_loci_arrays['readID'] = ReadIDArray(loci_arrays['readID'])
-    pa_loci_arrays['methylation'] = MethylationArray(loci_arrays['methylation'])
-    pa_loci_arrays['is_insertion'] = MethylationArray(loci_arrays['is_insertion'])
+    pa_loci_arrays = {
+        'nucleotide': pa.array(loci_arrays['nucleotide']),
+        'phred_scores': pa.array(loci_arrays['phred_scores']),
+        'chromosome': pa.array(loci_arrays['chromosome']),
+        'readID': pa.array(loci_arrays['readID']),
+        'methylation': pa.array(loci_arrays['methylation']),
+        'is_insertion': pa.array(loci_arrays['is_insertion'])
+    }
+    print('max point probably')
+    print_memory_footprint()
     del loci_arrays
 
-    read_metadata = ReadMetadata(
-        pa.Table.from_pydict(pa_read_arrays)
-    )
     loci_data = LocusData(
-        pa.Table.from_pydict(pa_loci_arrays)
+        pa.Table.from_pydict(pa_loci_arrays),
+        chrm_map=chrm_map,
     )
+    print('Just before returning')
+    print_memory_footprint()
 
-    return dict(read_metadata=read_metadata, loci_data=loci_data)
-
-
-
-# THINGS to TEST
-# do the is_insertion == 1 match the insertions in the locus.
+    print('Reads: ', read_i, 'Locus: ', locus_i_next)
 
 
 
+    return ReadData(loci_data, read_metadata, bam_fn=bamfn,
+                    bam_header=str(alignmentfile.header))
 
 
+# @define(slots=True)
+# class Pileup:
+#     data: LocusData
+#     loci: Loci
+#
+#     #@cached_property # req attrs
+#     def mask(self):
+#         return self.data.loci_mask(**self.loci.to_kwargs())
+#
+#     # @cached_property # req attrs
+#     def image(self):
+#         arr = rearrange_data(
+#             self.data.read_methylation_at_loci(
+#                 **self.loci.to_kwargs()
+#             )
+#         )
 
 
-
-
-
-@dataclass(slots=True)
-class Pileup:
-    data: LocusData
-    loci: Loci
-
-    #@cached_property # req attrs
-    def mask(self):
-        return self.data.loci_mask(**self.loci.to_kwargs())
-
-    # @cached_property # req attrs
-    def image(self):
-        arr = rearrange_data(
-            self.data.read_methylation_at_loci(
-                **self.loci.to_kwargs()
-            )
-        )
 
 
 
@@ -412,14 +555,39 @@ def rearrange_data(positions, states, rowids):
 
     return output_array.astype(float)  # Ensure the array is of type float for NaN compatibility
 
-# # Example usage
-# positionsA = np.array([100, 105, 110, 121, 100, 110, 121, 122])
-# stateA = np.array([1, 2, 3, 4, 5, 6, 7, 8])
-# rowid = np.array([1, 1, 1, 1, 2, 2, 2, 2])
-#
-# result_array = rearrange_data(positionsA, stateA, rowid)
+def ttests(test_bam_fn, test_regions_fn, testoutdir,
+           *, delete_first=False):
+    import datetime
+    if delete_first:
+        os.rmdir(testoutdir, )
+    # get current time for timedelta
+    start = datetime.datetime.now()
+    rd = process_bam_to_readdata(
+        test_bam_fn,
+        test_regions_fn
+    )
+    # time checkpoint
+    next1 = datetime.datetime.now()
+    print('Time to process:', next1 - start)
 
-process_bam_to_ndarrays(
-    '/home/jaytee/DevLab/NIMBUS/Data/test/bismark_10k.sorted.bam',
-    '/home/jaytee/DevLab/NIMBUS/Reference/regions-table.canary.4k.tsv'
-)
+    rd.to_dir(testoutdir)
+    next2 = datetime.datetime.now()
+    print('Time to write:', next2 - next1)
+
+    rd2 = ReadData.from_dir(testoutdir)
+    next3 = datetime.datetime.now()
+    print('Time to read:' , next3 - next2)
+    print('\n')
+    rd.print_heads()
+    rd2.print_heads()
+
+
+
+
+if __name__ == '__main__':
+
+    bm = '/home/jcthomas/DevLab/NIMBUS/Data/test/bismark_10k.bam'
+    #bm = '/home/jcthomas/data/canary/sorted_qname/CMDL19003173_1_val_1_bismark_bt2_pe.deduplicated.bam'
+    rg = '/home/jcthomas/DevLab/NIMBUS/Reference/regions-table.canary.4k.tsv'
+    out = '/home/jcthomas/DevLab/NIMBUS/Data/test/readdata_structure_test'
+    ttests(bm, rg, out)
