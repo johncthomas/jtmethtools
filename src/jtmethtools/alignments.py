@@ -387,4 +387,4 @@ def _test():
 
 if __name__ == '__main__':
     logger.remove()
-    #_test()
+    _test()
