@@ -1,1 +1,1 @@
-from jtmethtools import alignments, reads, util
+from jtmethtools import alignments, alignment_data, util

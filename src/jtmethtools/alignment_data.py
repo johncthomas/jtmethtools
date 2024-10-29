@@ -6,18 +6,18 @@ import typing
 from typing import Collection, Tuple, Mapping, Self
 from functools import cached_property, lru_cache
 
-
 import attrs
-from loguru import logger
+#import matplotlib.pyplot as plt
 
 import numpy as np
+from matplotlib.pyplot import figure
 from numpy.typing import ArrayLike, NDArray
 
 import pysam
 from pysam import AlignedSegment, AlignmentFile, AlignmentHeader
 
 import pyarrow as pa
-import pyarrow.compute as pc
+import pyarrow.compute as compute
 from pyarrow import parquet
 
 from attrs import field, define
@@ -27,15 +27,43 @@ from jtmethtools.alignments import (
     iter_bam,
     Regions,
 )
+from jtmethtools.util import (
+    write_array, read_array, logger
+)
 
 Pathesque = str | Path | PathLike[str]
+
+PIXEL_DTYPE = np.float32
+PixelArray = NDArray[PIXEL_DTYPE]
 
 
 
 # pyarrow bools aren't recognised as bools by python, they
-# are Truthy, even when false. So using x == TruePA
+# are Truthy, even when `false`. So using x == TruePA
 TruePA = pa.scalar(True, type=pa.bool_())
 FalsePA = pa.scalar(False, type=pa.bool_())
+
+_ntcodes = dict(zip('ACGTN', np.array([1, 2, 3, 4, 0], dtype=np.uint8)))
+NT_CODES = _ntcodes | {v:k for k, v in _ntcodes.items()}
+
+print(NT_CODES)
+
+_bsmk_codes = dict(zip('.ZHXU', np.array([0, 1, 2, 3, 4], dtype=np.uint8)))
+BISMARK_CODES = _bsmk_codes | {v:k for k, v in _bsmk_codes.items()}
+
+# **NOTE** If one of these changes, also change the numpy ndarrays
+# used as intermediates in creation.
+ReadIDArray = pa.UInt32Array
+PositionArray = pa.UInt32Array
+ChrmArray = pa.UInt8Array
+MapQArray = pa.UInt8Array
+NucleotideArray = pa.UInt8Array
+MethylationArray = pa.UInt8Array
+PhredArray = pa.UInt8Array
+# read ID used for padding row in generation of images
+#  hopefully shouldn't exist in teh actual data cus we want
+#  it to crash if it's ever accidentally used to look up info.
+PAD_READID = np.iinfo(np.uint32).max
 
 @define(slots=True)
 class LociRange:
@@ -51,36 +79,25 @@ class LociRange:
         """Returns: (start, end, chrm)"""
         return (self.start, self.end, self.chrm)
 
+@define
+class Image:
+    array:NDArray[PIXEL_DTYPE]
+    channel_names: list[str]
 
-_ntcodes = dict(zip('ACGTN', np.array([1, 2, 3, 4, 0], dtype=np.uint8)))
-NT_CODES = _ntcodes | {v:k for k, v in _ntcodes.items()}
+    def to_file(self, outfn:Pathesque):
+        """Write array with metadata"""
+        write_array(self.array, outfn,
+                    additional_metadata={'channel_names':self.channel_names})
 
-_bsmk_codes = dict(zip('.ZHXU', np.array([0, 1, 2, 3, 4], dtype=np.uint8)))
-BISMARK_CODES = _bsmk_codes | {v:k for k, v in _bsmk_codes.items()}
-
-# **NOTE** If one of these changes, also change the numpy ndarrays
-# used as intermediates in creation.
-ReadIDArray = pa.UInt32Array
-LocusArray = pa.UInt32Array
-ChrmArray = pa.UInt8Array
-MapQArray = pa.UInt8Array
-NucleotideArray = pa.UInt8Array
-MethylationArray = pa.UInt8Array
-PhredArray = pa.UInt8Array
+    @classmethod
+    def from_file(cls, fn:Pathesque):
+        array, metadata = read_array(fn)
+        return cls(array, channel_names=metadata['channel_names'])
 
 
-def loci_mask(
-        target_loci:LocusArray, target_chrm:ChrmArray,
-        start:int, end:int, chrm:int) -> pa.BooleanArray:
-
-    # (loci >= start) & (loci < end)
-    loc_m = pc.and_(pc.greater_equal(target_loci, pa.scalar(start)),
-                    pc.less(target_loci, pa.scalar(end)))
-    chrm_m = pc.equal(target_chrm, pa.scalar(chrm))
-    return pc.and_(loc_m, chrm_m)
 
 
-class ReadMetadata:
+class ReadTable:
     def __init__(
             self,
             table:pa.Table,
@@ -91,11 +108,11 @@ class ReadMetadata:
 
         self.table = table
         self.max_mapq = max_mapq
-        if pc.greater(
-                pc.max(self.mapping_quality),
+        if compute.greater(
+                compute.max(self.mapping_quality),
                 pa.scalar(max_mapq, type=pa.uint8())
         ) == TruePA:
-            max_found = pc.max(self.mapping_quality).as_py()
+            max_found = compute.max(self.mapping_quality).as_py()
             raise RuntimeError(
                 f"Max MAPQ exceeded ({max_found} > {max_mapq}) , the alignment is using a different"
                 " scale and image gen would need to be rewritten"
@@ -109,11 +126,11 @@ class ReadMetadata:
         return self.table.column("readID")
 
     @property
-    def start(self) -> LocusArray:
+    def start(self) -> PositionArray:
         return self.table.column("start")
 
     @property
-    def end(self) -> LocusArray:
+    def end(self) -> PositionArray:
         return self.table.column("end")
 
     @property
@@ -142,19 +159,27 @@ class ReadMetadata:
         )
 
     @lru_cache(255)
-    def read_ids_at_loci(self, start:int, end:int, chrm:int) -> pa.Int32Array:
-        condition1 = pc.less_equal(self.table.column("start"), pa.scalar(end))
-        condition2 = pc.greater_equal(self.table.column("end"), pa.scalar(start))
-        condition3 = pc.equal(self.table.column("chrm"), pa.scalar(chrm))
+    def read_ids_at_loci(self, start:int, end:int, chrm:int) -> PositionArray:
+        condition1 = compute.less_equal(self.table.column("start"), pa.scalar(end))
+        condition2 = compute.greater_equal(self.table.column("end"), pa.scalar(start))
+        condition3 = compute.equal(self.table.column("chrm"), pa.scalar(chrm))
 
         # combine the conditions
-        combined_condition = pc.and_(pc.and_(condition1, condition2), condition3)
+        combined_condition = compute.and_(compute.and_(condition1, condition2), condition3)
 
         # Filter the table to get rows where all conditions are true
-        filtered_readIDs = pc.filter(self.table.column("readID"), combined_condition)
+        filtered_readIDs = compute.filter(self.table.column("readID"), combined_condition)
 
         # Return the filtered readIDs (which will be a pyarrow.Array)
         return filtered_readIDs
+
+    def get_value(self, read_id:int, col:str) -> pa.Table:
+        t = self.readID
+        m = compute.equal(t, pa.scalar(read_id, type=pa.uint32()))
+        v = self.table.column(col).filter(m).to_pylist()
+        logger.trace(f"readid: {read_id}")
+        logger.trace(v)
+        return v[0]
 
     def to_parquet(self, fn: str|Path):
         """Write table in Parquet format"""
@@ -182,7 +207,7 @@ class ReadMetadata:
 
 
 @define
-class LocusData:
+class LocusTable:
 
     table: pa.Table
     chrm_map: dict
@@ -200,7 +225,7 @@ class LocusData:
         return self.table.column("chrm")
 
     @property
-    def position(self) -> LocusArray:
+    def position(self) -> PositionArray:
         return self.table.column("position")
 
     @property
@@ -220,20 +245,35 @@ class LocusData:
         parquet.write_table(self.table, fn)
 
     def loci_mask(self, loci:LociRange) -> pa.BooleanArray:
-        return loci_mask(self.position, self.chrm,
-                  loci.start, loci.end, self.chrm_map[loci.chrm])
+        loc_m = compute.and_(
+            compute.greater_equal(
+                self.position,
+                pa.scalar(loci.start)
+            ),
+            compute.less(
+                self.position,
+                pa.scalar(loci.end)
+            )
+        )
+
+        chrm_m = compute.equal(
+            self.chrm,
+            pa.scalar(self.chrm_map[loci.chrm])
+        )
+
+        return compute.and_(loc_m, chrm_m)
 
     @cached_property
     def max_phred(self) -> int:
-        return pc.max(self.phred_scores).as_py()
+        return compute.max(self.phred_scores).as_py()
 
     def filter(self, *args, **kwargs) -> Self:
         """Args passed to self.table.filter(), returns LocusData with
         filtered self.table"""
-        return LocusData(self.table.filter(*args, **kwargs), chrm_map=self.chrm_map)
+        return LocusTable(self.table.filter(*args, **kwargs), chrm_map=self.chrm_map)
 
     def remove_insertions(self) -> Self:
-        return self.filter(pc.invert(self.is_insertion))
+        return self.filter(compute.invert(self.is_insertion))
 
     def window(self, loci:LociRange) -> Self:
         m = self.loci_mask(loci)
@@ -263,9 +303,9 @@ class LocusData:
 
 
 @define
-class ReadData:
-    locus_data:LocusData
-    read_data:ReadMetadata
+class AlignmentsData:
+    locus_data:LocusTable
+    read_data:ReadTable
     bam_fn:str
     bam_header:str
     version:int = 1 #increment when attributes change
@@ -297,8 +337,8 @@ class ReadData:
     @classmethod
     def from_dir(cls, directory:Pathesque):
         directory = pathlib.Path(directory)
-        loci = LocusData.from_dir(directory)
-        read = ReadMetadata.from_dir(directory)
+        loci = LocusTable.from_dir(directory)
+        read = ReadTable.from_dir(directory)
 
         with open(directory/'short-fields.dict', 'r') as f:
             d = eval(f.read())
@@ -310,21 +350,22 @@ class ReadData:
             bamfn:Pathesque,
             regionsfn:Pathesque|None=None
     ):
-        self = process_bam_to_readdata(bamfn, regionsfn)
+        self = process_bam(bamfn, regionsfn)
         return self
 
     def print_heads(self, n=5) -> None:
-        print('Read table:')
-        print(self.read_data.table.slice(0, n))
-        print('\n++++\n')
-        print('Loci table:')
-        print(self.locus_data.table.slice(0, n))
+        logger.info('Read table:')
+        logger.info(self.read_data.table.slice(0, n))
+        logger.info('\n++++\n')
+        logger.info('Loci table:')
+        logger.info(self.locus_data.table.slice(0, n))
 
 
     def loci_mask(self, loci:LociRange) -> pa.BooleanArray:
         return self.locus_data.loci_mask(loci)
 
     def window(self, start:int, end:int, chrm:str,) -> Self:
+        """Return an AlignmentData subset to the given loci range."""
         loci = LociRange(
             start=start,
             end=end,
@@ -334,25 +375,32 @@ class ReadData:
         locuswindow = self.locus_data.filter(mask)
         # note: at the moment can't filter read_data cus we rely on the row
         # positions, but it also should be relatively small.
-        return ReadData(locuswindow, self.read_data, **self._get_nontable_attr())
+        return AlignmentsData(locuswindow, self.read_data, **self._get_nontable_attr())
+
+    def filter_ncpg(self):
+        """Remove reads from locus_data where number of """
 
 
-
-
-class Image:
+class ImageMaker:
     __slots__ = ['window', 'positions', 'unique_positions',
                  'unique_rowids', 'position_indices', 'row_indices',
-                 '_readid_image', 'width']
+                 '_readid_image', 'width', 'chosen_image_types']
 
     null_grey = 0.2 # value where a base exists but is negative
-    strand_colours = (0.8, 1)
+    strand_colours = (0.6, 1)
 
+    def __init__(self, window:AlignmentsData, image_types:Collection[str]):
+        # check given image types are methods
+        for it in image_types:
+            assert hasattr(self, it), f"Unknown image type: {it}"
 
-    def __init__(self, window:ReadData):
-        self.window:ReadData = window
+        self.window:AlignmentsData = window
+        self.chosen_image_types = image_types
 
         pos = window.locus_data.position.to_numpy()
         rids =  window.locus_data.readID.to_numpy()
+        logger.trace(pos)
+        logger.trace(rids)
 
         # add padding, and ensure gaps are shown by creating a
         #  blank read that hits every position between the start
@@ -360,10 +408,10 @@ class Image:
         start, end = min(pos), max(pos)
         self.width = width = end-start
 
-        padrid = np.max(rids) + 1
+        # add the padding info
         rids = np.concatenate([
             rids,
-            np.ones(shape=(width,), dtype=rids.dtype) * padrid,
+            np.ones(shape=(width,), dtype=rids.dtype) * PAD_READID
         ])
 
         pos = np.concatenate([
@@ -383,18 +431,7 @@ class Image:
         #  level values. Copys provided by method
         self._readid_image = self._protoimage(window.locus_data.readID)
 
-    @staticmethod
-    def finish_image(image, fillval=0) -> None:
-        """Fill missing (np.nan) positions in image with 0,
-        or fillval & remove bottom row (which is the """
-        image[np.isnan(image)] = fillval
-        return image[:-1]
-
-    @property
-    def read_id_image_copy(self):
-        return np.copy(self._readid_image)
-
-    def _protoimage(self, states:pa.Array):
+    def _protoimage(self, states:pa.Array) -> PixelArray:
         """Create image (array) where values are given by state,
         and missing positions are np.nan
         """
@@ -402,7 +439,7 @@ class Image:
 
         states = np.concatenate([
             states,
-            np.zeros(shape=(self.width,), dtype=states.dtype),
+            np.zeros(shape=(self.width,), dtype=PIXEL_DTYPE),
         ])
 
         # Initialize the output array with NaN values
@@ -411,79 +448,103 @@ class Image:
             np.nan
         )
 
+
         # Populate the output array directly using the indices
         output_array[self.row_indices, self.position_indices] = states
 
-        return output_array.astype(float)
+        return output_array.astype(PIXEL_DTYPE)
+
+    def get_read_value(self, rid:int, col:str):
+        """Get the value from `col` column in read table for the
+        given read ID. Returns np.nan when read ID is PAD_READID"""
+        if rid == PAD_READID:
+            return 0
+
+        return self.window.read_data.get_value(rid, col)
+
+    @staticmethod
+    def finish_image(image, fillval=0) -> PixelArray:
+        """Fill missing (np.nan) positions in image with 0,
+        or fillval & remove bottom row (which is only there
+         to pad the width)."""
+        image[np.isnan(image)] = fillval
+        return image[:-1]
+
+    @property
+    def read_id_image_copy(self):
+        return np.copy(self._readid_image)
 
 
-    def methylated_cpg(self):
+    def methylated_cpg(self) -> PixelArray:
         """1 where CpG is methylated, null_grey otherwise"""
-        cpg_met = pc.equal(self.window.locus_data.methylation, pa.scalar(1))
+        cpg_met = compute.equal(self.window.locus_data.methylation, pa.scalar(1))
         image = self._protoimage(cpg_met)
         image[image==0.] = self.null_grey
 
         return self.finish_image(image)
 
-    def methylated_other(self):
+    def methylated_other(self) -> PixelArray:
         """1 where non-cpg methylated, null_grey otherwise"""
-        other_met = pc.greater(self.window.locus_data.methylation, pa.scalar(1))
+        other_met = compute.greater(self.window.locus_data.methylation, pa.scalar(1))
         image = self._protoimage(other_met)
         image[image == 0.] = self.null_grey
 
         return self.finish_image(image)
 
 
-    def methylated_any(self):
+    def methylated_any(self) -> PixelArray:
         """1 where non-cpg methylated, null_grey otherwise"""
-        other_met = pc.greater(self.window.locus_data.methylation, pa.scalar(0))
+        other_met = compute.greater(self.window.locus_data.methylation, pa.scalar(0))
         image = self._protoimage(other_met)
         image[image == 0.] = self.null_grey
 
         return self.finish_image(image)
 
 
-    def bases(self):
+    def bases(self) -> PixelArray:
         """Shades of grey for each colour"""
         image = self._protoimage(
             self.window.locus_data.nucleotide
         )
+
+        logger.trace(image)
         # gives values (0.4, 0.6, 0.8, 1.)
         image = image/5 + 0.2
 
         return self.finish_image(image)
 
 
-    def bases_met_as_fith(self):
+    def bases_met_as_fifth(self) -> PixelArray:
         """The normal 4 plus methylated C"""
-        image = self._protoimage(
-            self.window.locus_data.nucleotide
-        )
-
-        mask = self.methylated_any() == 1
+        image = self._protoimage(self.window.locus_data.nucleotide)
+        image = self.finish_image(image)
+        metimg = self.methylated_any()
+        mask = metimg == 1
         image[mask] = 5
 
         image = image/6 + 1/6
 
-        return self.finish_image(image)
+        # image is already finished
+        return image
 
 
-    def strand(self):
+    def strand(self) -> PixelArray:
         """light grey for rev strand, white for for strand."""
         image = self.read_id_image_copy
         for rid in self.unique_rowids:
-            isfor = self.window.read_data.is_forward[rid]
-            c = self.strand_colours[isfor == TruePA]
+            #isfor = self.window.read_data.is_forward.slice(rid, rid)
+            isfor = self.get_read_value(rid, 'is_forward')
+            c = self.strand_colours[isfor]
             image[image==rid] = c
 
         return self.finish_image(image)
 
 
-    def mapping_quality(self):
+    def mapping_quality(self) -> PixelArray:
         """Each read a shade of grey proportional to mapping quality"""
         image = self.read_id_image_copy
         for rid in self.unique_rowids:
-            mapq = self.window.read_data.mapping_quality[rid]
+            mapq = self.get_read_value(rid, 'mapping_quality')
 
             mapq += self.null_grey
             mapq /= self.window.read_data.max_mapq + self.null_grey
@@ -493,18 +554,67 @@ class Image:
         return self.finish_image(image)
 
 
-    def phred(self):
+    def phred(self) -> PixelArray:
         image = self._protoimage(self.window.locus_data.phred_scores)
         image /= self.window.locus_data.max_phred
 
         return self.finish_image(image)
 
 
-    def fill_reads_one_colour(self, c:float):
+    def fill_reads_one_colour(self, c:float) -> PixelArray:
         image = self._protoimage(c)
 
         return self.finish_image(image)
 
+
+    def get_images(
+            self,
+            image_types:Collection[str]
+    ) -> dict[str, PixelArray]:
+        images = {}
+        for meth in image_types:
+            img = getattr(self, meth)()
+            images[meth] = img
+        return images
+
+
+    def plot_img(self, img:PixelArray, ax=None, **imshow_kw):
+        import matplotlib.pyplot as plt
+        if ax:
+            plt.sca(ax)
+        kwargs = {'interpolation':'nearest', 'cmap':'gray'} | imshow_kw
+        plt.imshow(img, **kwargs)
+
+    def plot_chosen_images(self):
+        import matplotlib.pyplot as plt
+        layers:dict[str, NDArray] = self.get_images(
+            self.chosen_image_types
+        )
+        n = len(layers)
+        fig, axes = plt.subplots(1, n, figsize=(8*n, 1.6*3) )
+        if isinstance(axes, plt.Axes):
+            axes = [axes]
+        logger.debug(axes)
+        for axi, (k, img) in enumerate(layers.items()):
+            self.plot_img(img, ax=axes[axi])
+            axes[axi].set_title(k)
+        return fig, axes
+
+    def _plot_test_images(self):
+        import matplotlib.pyplot as plt
+        layers:dict[str, NDArray] = self.get_images(
+            ('bases', 'methylated_cpg', 'methylated_other', 'methylated_any',
+             'bases_met_as_fifth', 'strand', 'mapping_quality', 'phred',
+             )
+        )
+        n = len(layers)
+        fig, axes = plt.subplots(1, n, figsize=(9*n, 1.8*3) )
+        logger.debug(axes)
+        for axi, (i, img) in enumerate(layers.items()):
+
+            self.plot_img(img, ax=axes[axi])
+            axes[axi].set_title(i)
+        return fig, axes
 
 
 def _encode_string(string:str, codes:dict) -> NDArray[np.uint8]:
@@ -564,26 +674,37 @@ def print_memory_footprint():
     # Convert to megabytes (MB) for easier readability
     memory_usage_mb = memory_usage / (1024 ** 2)
 
-    print(f"Memory usage: {memory_usage_mb:.2f} MB")
+    logger.info(f"Memory usage: {memory_usage_mb:.2f} MB")
 
 
-def process_bam_to_readdata(bamfn, regionsfn:str) -> ReadData:
-
+def process_bam(bamfn, regionsfn:str|Path, filter_by_region=True) -> AlignmentsData:
+    regionsfn = str(regionsfn)
     # get the number of reads and the number of aligned bases
     n_reads = 0
     n_bases = 0
     paired = False
+
     if regionsfn.endswith('.tsv'):
         regions = Regions.from_file(regionsfn)
     else:
         regions = Regions.from_bed(regionsfn)
+
+    def check_hits_region() -> bool:
+        if filter_by_region:
+            return len(aln.hit_regions(regions)) > 0
+        else:
+            return True
+
 
     chrm_map = {}
     for i, c in enumerate(regions.chromsomes):
         chrm_map[i] = c
         chrm_map[c] = i
 
-    print('Before creating creating empty arrays:')
+    logger.info('\n')
+    logger.info(chrm_map)
+
+    logger.info('Before creating creating empty arrays:')
     print_memory_footprint()
 
     bam = AlignmentFile(bamfn)
@@ -593,9 +714,7 @@ def process_bam_to_readdata(bamfn, regionsfn:str) -> ReadData:
     for aln in iter_bam(bam, paired_end=paired):
         aln:Alignment
 
-        hit_regns = aln.hit_regions(regions)
-
-        if hit_regns:
+        if check_hits_region():
             n_reads += 1
             n_bases += aln.a.query_length
 
@@ -620,7 +739,7 @@ def process_bam_to_readdata(bamfn, regionsfn:str) -> ReadData:
         is_insertion=np.zeros(dtype=np.uint8, shape=(n_bases,))
     )
 
-    print('After:')
+    logger.info('After:')
     print_memory_footprint()
 
     max32 = np.iinfo(position_dtype).max
@@ -630,7 +749,7 @@ def process_bam_to_readdata(bamfn, regionsfn:str) -> ReadData:
     for readID, aln in enumerate(iter_bam(alignmentfile, paired_end=paired)):
         aln:Alignment
 
-        if not aln.hit_regions(regions):
+        if not check_hits_region():
             continue
 
         # deal with the table indicies
@@ -668,7 +787,7 @@ def process_bam_to_readdata(bamfn, regionsfn:str) -> ReadData:
     # get things out of memory asap
     del read_arrays
 
-    read_metadata = ReadMetadata(
+    read_metadata = ReadTable(
         pa.Table.from_pydict(pa_read_arrays)
     )
     del pa_read_arrays
@@ -683,7 +802,7 @@ def process_bam_to_readdata(bamfn, regionsfn:str) -> ReadData:
         'methylation': pa.array(loci_arrays['methylation']),
         'is_insertion': pa.array(loci_arrays['is_insertion'], type=pa.bool_())
     }
-    print('max point probably')
+    logger.info('max point probably')
     print_memory_footprint()
     del loci_arrays
 
@@ -693,20 +812,21 @@ def process_bam_to_readdata(bamfn, regionsfn:str) -> ReadData:
         ('position', 'ascending')
     ])
 
-    loci_data = LocusData(
+    loci_data = LocusTable(
         loci_table,
         chrm_map=chrm_map,
     )
-    print('Just before returning')
+    logger.info('Just before returning')
     print_memory_footprint()
 
-    print('Reads: ', read_i, 'Locus: ', position_i_next)
+    logger.info('Reads: ', read_i, 'Locus: ', position_i_next)
 
     logger.info("Removing insertions...")
     loci_data.remove_insertions()
 
-    return ReadData(loci_data, read_metadata, bam_fn=bamfn,
-                    bam_header=str(alignmentfile.header))
+    return AlignmentsData(loci_data, read_metadata, bam_fn=bamfn,
+                          bam_header=str(alignmentfile.header))
+
 
 
 def ttests(test_bam_fn, test_regions_fn, testoutdir,
@@ -714,12 +834,13 @@ def ttests(test_bam_fn, test_regions_fn, testoutdir,
     import datetime
     testoutdir = Path(testoutdir)
     if delete_first:
-        for f in os.listdir(testoutdir):
-            os.remove(testoutdir/f)
-        os.rmdir(testoutdir, )
+        if os.path.isdir(testoutdir):
+            for f in os.listdir(testoutdir):
+                os.remove(testoutdir/f)
+            os.rmdir(testoutdir, )
     # get current time for timedelta
     start = datetime.datetime.now()
-    rd = process_bam_to_readdata(
+    rd = process_bam(
         test_bam_fn,
         test_regions_fn
     )
@@ -732,24 +853,52 @@ def ttests(test_bam_fn, test_regions_fn, testoutdir,
     next2 = datetime.datetime.now()
     print('Time to write:', next2 - next1)
 
-    rd2 = ReadData.from_dir(testoutdir)
+    rd2 = AlignmentsData.from_dir(testoutdir)
     next3 = datetime.datetime.now()
     print('Time to read:' , next3 - next2)
     print('\n')
     rd.print_heads()
     rd2.print_heads()
 
-    window = rd.window(970536, 970586, '1')
-    img = Image(window)
-    print(img.methylated_cpg())
+    window = rd.window(970436, 970786, '1')
+    img = ImageMaker(window)
+    #print(img.methylated_cpg())
+    print(img.methylated_cpg().shape)
+    import matplotlib.pyplot as plt
+    fig, axes = img.plot_chosen_images()
+    imgd = img.get_images()
+
+    plt.savefig('/home/jcthomas/DevLab/NIMBUS/Figures/test_images.1.png')
 
 
+# def bases_test():
+#
 
 
 if __name__ == '__main__':
+    # print(__file__)
+    # bm = '/home/jcthomas/DevLab/NIMBUS/Data/test/bismark_10k.bam'
+    # #bm = '/home/jcthomas/data/canary/sorted_qname/CMDL19003173_1_val_1_bismark_bt2_pe.deduplicated.bam'
+    # rg = '/home/jcthomas/DevLab/NIMBUS/Reference/regions-table.canary.4k.tsv'
+    # out = '/home/jcthomas/DevLab/NIMBUS/Data/test/readdata_structure_test'
+    # ttests(bm, rg, out, delete_first=True)
 
-    bm = '/home/jcthomas/DevLab/NIMBUS/Data/test/bismark_10k.bam'
-    #bm = '/home/jcthomas/data/canary/sorted_qname/CMDL19003173_1_val_1_bismark_bt2_pe.deduplicated.bam'
-    rg = '/home/jcthomas/DevLab/NIMBUS/Reference/regions-table.canary.4k.tsv'
-    out = '/home/jcthomas/DevLab/NIMBUS/Data/test/readdata_structure_test'
-    ttests(bm, rg, out, delete_first=True)
+    TESTDIR = Path('/home/jcthomas/python/jtmethtools/src/jtmethtools/tests/')
+
+    test_bam_fn = TESTDIR / 'img-test.sam'
+
+    test_regions_fn = TESTDIR / 'regions.bed'
+
+
+    rd = process_bam(
+        test_bam_fn,
+        test_regions_fn
+    )
+
+    rd.print_heads(100)
+
+    window = rd.window(90, 110, '1')
+    img = ImageMaker(window, ['strand'])
+    import matplotlib.pyplot as plt
+    fig, axes = img.plot_chosen_images()
+    plt.savefig(TESTDIR / 'channels.png', dpi=150, )

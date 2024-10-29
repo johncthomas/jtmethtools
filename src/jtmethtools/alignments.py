@@ -17,7 +17,6 @@ SplitTable = dict[str, pd.DataFrame]
 from jtmethtools.util import (
     load_region_bed,
     split_table_by_chrm,
-
 )
 
 
