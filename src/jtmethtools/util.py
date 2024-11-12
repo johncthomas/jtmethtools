@@ -103,7 +103,7 @@ def write_array(
         meta_filename = "metadata.json"
 
         metadata = {
-            f'_np_shape': [array.shape[0], array.shape[1]],
+            f'_np_shape': [s for s in array.shape],
             f'_np_dtype': str(array.dtype),
         }
 
