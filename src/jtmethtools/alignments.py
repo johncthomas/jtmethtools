@@ -19,6 +19,21 @@ from jtmethtools.util import (
     split_table_by_chrm,
 )
 
+@define(slots=True)
+class LociRange:
+    start:int
+    end:int
+    chrm:str
+    name:str=None
+
+    def to_kwargs(self):
+        """dict with keys chrm, start, end."""
+        return dict(chrm=self.chrm, start=self.start, end=self.end)
+
+    def to_tuple(self):
+        """Returns: (start, end, chrm)"""
+        return (self.start, self.end, self.chrm)
+
 
 @define
 class Regions:
@@ -33,12 +48,23 @@ class Regions:
     thresholds: dict[str, float] = None
     df: pd.DataFrame = None
 
+    def iter(self) -> typing.Iterable[LociRange]:
+        for _, row in self.df.iterrows():
+            yield LociRange(
+                start=row.Start,
+                end=row.End,
+                chrm=row.Chrm,
+                name=row.Name
+            )
+
     @cached_property
     def chromsomes(self) -> set[str]:
         return set(self.df.Chrm.unique())
 
     @classmethod
     def from_file(cls, filename: str) -> Self:
+        if filename.endswith('.bed') or filename.endswith('.txt'):
+            return cls.from_bed(filename)
         df = pd.read_csv(filename, sep='\t',)
         df.set_index( 'Name', inplace=True, drop=False)
         return (cls.from_df(df))
@@ -359,7 +385,7 @@ def iter_bam(
         start_stop:Tuple[int, int]=(0, np.inf),
         paired_end:bool=True,
         kind='bismark',
-) -> Alignment:
+) -> typing.Iterable[Alignment]:
     """Iterate over a bam file, yielding Alignments.
 
     Use start_stop for splitting a bam file for, e.g. multiprocessing.
