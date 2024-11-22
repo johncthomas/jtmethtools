@@ -36,9 +36,28 @@ class ImageMaker:
     null_grey = 0.2 # value where a base exists but is negative
     strand_colours = (0.6, 1)
 
-    def __init__(self, window:AlignmentsData, start:int, end:int):
+    def __init__(
+            self,
+            window:AlignmentsData,
+            start:int,
+            end:int,
+            rows:int,
+            seed=None,
+    ):
 
         self.window:AlignmentsData = window
+
+        # If there's too many reads, filter to the required number
+        read_ids = compute.unique(window.locus_data.readID).to_numpy()
+        if read_ids.shape[0] > rows:
+            read_ids = np.random.choice(read_ids, rows, replace=False)
+
+            window.locus_data = window.locus_data.filter(
+                compute.is_in(
+                    self.readID, read_ids
+                )
+            )
+
 
         pos = window.locus_data.position.to_numpy()
 
@@ -46,10 +65,12 @@ class ImageMaker:
         logger.trace(pos)
         logger.trace(rids)
 
-        # add padding, and ensure gaps are shown by creating a
+        # add padding, and ensure gaps are shown by creating     a
         #  blank read that hits every position between the start
         #  and end of the window.
         self.width = width = end-start
+
+        self.rows = rows
 
         # add the padding info
         rids = np.concatenate([
@@ -61,7 +82,7 @@ class ImageMaker:
             pos, np.arange(start, end, dtype=pos.dtype)
         ])
 
-        # These values used by .protoimage()
+        # These values used by ._protoimage()
         unique_positions, position_indices = np.unique(pos, return_inverse=True)
         unique_rowids, row_indices = np.unique(rids, return_inverse=True)
 
@@ -88,10 +109,9 @@ class ImageMaker:
 
         # Initialize the output array with NaN values
         output_array = np.full(
-            (len(self.unique_rowids), len(self.unique_positions)),
+            (self.rows, len(self.unique_positions)),
             np.nan
         )
-
 
         # Populate the output array directly using the indices
         output_array[self.row_indices, self.position_indices] = states
@@ -261,6 +281,8 @@ class ImageMaker:
             plot_image(img, ax=axes[axi])
             axes[axi].set_title(i)
         return fig, axes
+
+
 
 
 @define
