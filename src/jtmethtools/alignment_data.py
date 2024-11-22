@@ -87,10 +87,7 @@ class PositionCol(Column):
     pa_dtype:type=pa.UInt32Scalar
     np_dtype:type=POS_NP_DTYPE
 
-
-
-
-class COLS_READ():
+class COLS_READ:
     readID = Column('readID', pa.UInt32Array, pa.UInt32Scalar, np.uint32)
     start = PositionCol('start')
     end = PositionCol('end')
@@ -99,7 +96,7 @@ class COLS_READ():
     is_forward = Column('is_forward', pa.BooleanArray, pa.BooleanScalar, np.bool_)
     read_name = Column('read_name', pa.StringArray, pa.StringScalar, object)
 
-class COLS_LOCUS():
+class COLS_LOCUS:
     readID = Column('readID', pa.UInt32Array, pa.UInt32Scalar, np.uint32)
     nucleotide = Column('nucleotide', pa.UInt8Array, pa.UInt8Scalar, np.uint8)
     phred_scores = Column('phred_scores', pa.UInt8Array, pa.UInt8Scalar, np.uint8)
