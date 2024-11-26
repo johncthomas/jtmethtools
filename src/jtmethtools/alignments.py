@@ -63,6 +63,7 @@ class Regions:
 
     @classmethod
     def from_file(cls, filename: str) -> Self:
+        filename = str(filename)
         if filename.endswith('.bed') or filename.endswith('.txt'):
             return cls.from_bed(filename)
         df = pd.read_csv(filename, sep='\t',)

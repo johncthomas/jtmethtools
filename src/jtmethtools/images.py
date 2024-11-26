@@ -28,10 +28,10 @@ def plot_image(img:PixelArray, ax=None, **imshow_kw):
 
 
 class ImageMaker:
-    __slots__ = ['window', 'positions', 'unique_positions',
-                 'unique_rowids', 'position_indices', 'row_indices',
-                 '_readid_image', 'width',
-                 'min_cpg', 'min_mapq']
+    # __slots__ = ['window', 'positions', 'unique_positions',
+    #              'unique_rowids', 'position_indices', 'row_indices',
+    #              '_readid_image', 'width', 'rows',
+    #              'min_cpg', 'min_mapq']
 
     null_grey = 0.2 # value where a base exists but is negative
     strand_colours = (0.6, 1)
@@ -41,46 +41,52 @@ class ImageMaker:
             window:AlignmentsData,
             start:int,
             end:int,
-            rows:int,
-            seed=None,
+            rows:int=100,
+            seed=123987,
     ):
 
         self.window:AlignmentsData = window
 
-        # If there's too many reads, filter to the required number
-        read_ids = compute.unique(window.locus_data.readID).to_numpy()
-        if read_ids.shape[0] > rows:
-            read_ids = np.random.choice(read_ids, rows, replace=False)
-
-            window.locus_data = window.locus_data.filter(
-                compute.is_in(
-                    self.readID, read_ids
-                )
-            )
-
-
-        pos = window.locus_data.position.to_numpy()
-
-        rids =  window.locus_data.readID.to_numpy()
-        logger.trace(pos)
-        logger.trace(rids)
 
         # add padding, and ensure gaps are shown by creating     a
         #  blank read that hits every position between the start
         #  and end of the window.
         self.width = width = end-start
 
-        self.rows = rows
+
+        # If there's too many reads, filter to the required number
+        read_ids = compute.unique(window.locus_data.readID).to_numpy()
+
+        if read_ids.shape[0] > rows:
+            np.random.seed(seed)
+            read_ids = np.random.choice(read_ids, rows, replace=False)
+
+            window.locus_data = window.locus_data.filter(
+                compute.is_in(
+                    window.locus_data.readID,
+                    pa.Array.from_pandas(read_ids)
+                )
+            )
+
+        pos = window.locus_data.position.to_numpy()
 
         # add the padding info
+        rids = window.locus_data.readID.to_numpy()
+        logger.trace(pos)
+        logger.trace(rids)
+
+        rows += 1 # the ones we expect plus the padder
         rids = np.concatenate([
             rids,
             np.ones(shape=(width,), dtype=rids.dtype) * PAD_READID
         ])
 
+
         pos = np.concatenate([
             pos, np.arange(start, end, dtype=pos.dtype)
         ])
+
+        self.rows = rows
 
         # These values used by ._protoimage()
         unique_positions, position_indices = np.unique(pos, return_inverse=True)
@@ -120,7 +126,7 @@ class ImageMaker:
 
     def _get_read_value(self, rid:int, col:str):
         """Get the value from `col` column in read table for the
-        given read ID. Returns np.nan when read ID is PAD_READID"""
+        given read ID. Returns 0 when read ID is PAD_READID"""
         if rid == PAD_READID:
             return 0
 
@@ -404,11 +410,36 @@ def ttests(test_bam_fn, test_regions_fn, testoutdir,
     #
     # plt.savefig('/home/jcthomas/DevLab/NIMBUS/Figures/test_images.1.png')
 
+def ttest_imagesize(
+        test_bam_fn, test_regions_fn, testoutdir,
+        *, delete_first=False
+):
+    import datetime
+    testoutdir = Path(testoutdir)
+    if delete_first:
+        if os.path.isdir(testoutdir):
+            for f in os.listdir(testoutdir):
+                os.remove(testoutdir / f)
+            os.rmdir(testoutdir, )
+    # get current time for timedelta
+    start = datetime.datetime.now()
+    rd = process_bam(
+        test_bam_fn,
+        test_regions_fn
+    )
+
 if __name__ == '__main__':
     logger.remove()
     print(__file__)
-    #bm = '/home/jcthomas/DevLab/NIMBUS/Data/test/bismark_10k.bam'
-    bm = '/home/jcthomas/data/canary/sorted_qname/CMDL19003173_1_val_1_bismark_bt2_pe.deduplicated.bam'
-    rg = '/home/jcthomas/DevLab/NIMBUS/Reference/regions-table.canary.4k.tsv'
-    out = '/home/jcthomas/DevLab/NIMBUS/Data/test/readdata_structure_test'
-    ttests(bm, rg, out, delete_first=True)
+
+    # get computer name
+    comp_name = os.uname()[1]
+    if comp_name == 'POS':
+        home = Path('/home/jaytee')
+    else:
+        home = Path('/home/jcthomas/')
+    #bm = home/'data/canary/sorted_qname/CMDL19003173_1_val_1_bismark_bt2_pe.deduplicated.bam'
+    bm = home/'DevLab/NIMBUS/Data/test/bismark_10k.bam'
+    rg = home/'DevLab/NIMBUS/Reference/regions-table.canary.4k.tsv'
+    out = home/'DevLab/NIMBUS/Data/test/readdata_structure_test'
+    ttest_imagesize(bm, rg, out, delete_first=True)
