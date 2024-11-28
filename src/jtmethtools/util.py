@@ -4,6 +4,7 @@ from typing import Collection, Tuple, Self
 import tarfile
 import os
 import json
+import tempfile
 
 import pandas as pd
 import numpy as np
@@ -85,7 +86,7 @@ import json
 
 def write_array(
         array: NDArray,
-        outfile: str|Path,
+        outfile: str|Path|typing.IO,
         additional_metadata: dict = None
 ) -> None:
     """Write a tar file that contains the binary data and metadata
@@ -93,39 +94,50 @@ def write_array(
 
     additional_metadata values should be strings or stringable."""
     # Create a temporary directory to store the files
-    with tarfile.open(outfile, "w") as tar:
+
+    if isinstance(outfile, str) or isinstance(outfile, Path):
+        tararg = {'name':outfile}
+    else:
+        tararg = {'fileobj':outfile}
+
+    with tarfile.open(**tararg, mode="w") as tar:
         # Save the binary data of the array
-        data_filename = "data.bin"
-        array.tofile(data_filename)
-        tar.add(data_filename)
+        with tempfile.NamedTemporaryFile('w') as tmpf:
+
+            array.tofile(tmpf.name)
+            tar.add(tmpf.name,  arcname='data.bin')
 
         # Create the metadata file with shape and dtype
-        meta_filename = "metadata.json"
+        with tempfile.NamedTemporaryFile('w') as tmpf:
 
-        metadata = {
-            f'_np_shape': [s for s in array.shape],
-            f'_np_dtype': str(array.dtype),
-        }
+            metadata = {
+                f'_np_shape': [s for s in array.shape],
+                f'_np_dtype': str(array.dtype),
+            }
 
-        if additional_metadata is not None:
-            metadata = metadata | additional_metadata
+            if additional_metadata is not None:
+                metadata = metadata | additional_metadata
 
-        with open(meta_filename, "w") as meta_file:
-            json.dump(metadata, meta_file)
-        tar.add(meta_filename)
+            json.dump(metadata, tmpf)
+            tmpf.flush() # write the buffer to disk
 
-    # Clean up temporary files
-    os.remove(data_filename)
-    os.remove(meta_filename)
+            tar.add(tmpf.name, arcname='metadata.json')
 
 
-def read_array(tar_filename: str|Path, ) -> Tuple[NDArray, dict]:
+
+def read_array(file: str|Path|typing.IO, ) -> Tuple[NDArray, dict]:
     """Read file created by `write_array`"""
-    with tarfile.open(tar_filename, "r") as tar:
-        # Extract the metadata file and parse it
-        meta_file = tar.extractfile("metadata.json")
+    if isinstance(file, str) or isinstance(file, Path):
+        tararg = {'name':file}
+    else:
+        tararg = {'fileobj':file}
+    print(tararg)
+    with tarfile.open(**tararg, mode="r") as tar:
 
-        metadata = json.load(meta_file)
+        # Extract the metadata file and parse it
+        meta_file = tar.extractfile("metadata.json").read().decode('utf-8')
+
+        metadata = json.loads(meta_file)
 
         # Extract the binary data and load it as a NumPy array
         data_file = tar.extractfile("data.bin")
@@ -136,5 +148,4 @@ def read_array(tar_filename: str|Path, ) -> Tuple[NDArray, dict]:
         ).reshape(metadata['_np_shape'])
 
     return array, metadata
-
 
