@@ -240,6 +240,7 @@ class Alignment:
     a: AlignedSegment
     a2: AlignedSegment | None = None
     kind: Literal['bismark'] = 'bismark'
+    filename: str = ''
 
     def _get_met_str(self, a:AlignedSegment):
         if self.kind == 'bismark':
