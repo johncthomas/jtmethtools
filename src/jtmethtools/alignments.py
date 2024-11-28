@@ -70,7 +70,7 @@ class Regions:
         filename = str(filename)
         if filename.endswith('.bed') or filename.endswith('.txt'):
             return cls.from_bed(filename)
-        df = pd.read_csv(filename, sep='\t',)
+        df = pd.read_csv(filename, sep='\t', dtype={'Chrm':str})
         df.set_index( 'Name', inplace=True, drop=False)
         return (cls.from_df(df))
 
