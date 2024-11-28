@@ -19,6 +19,10 @@ from jtmethtools.util import (
     split_table_by_chrm,
 )
 
+from pathlib import Path
+
+Pathy = str|Path
+
 @define(slots=True)
 class LociRange:
     start:int
@@ -62,7 +66,7 @@ class Regions:
         return set(self.df.Chrm.unique())
 
     @classmethod
-    def from_file(cls, filename: str) -> Self:
+    def from_file(cls, filename: Pathy) -> Self:
         filename = str(filename)
         if filename.endswith('.bed') or filename.endswith('.txt'):
             return cls.from_bed(filename)
@@ -72,7 +76,8 @@ class Regions:
 
 
     @classmethod
-    def from_bed(cls, filename: str) -> Self:
+    def from_bed(cls, filename: Pathy) -> Self:
+        raise NotImplementedError("Table now needs thresholds.")
         df = load_region_bed(filename)
         return cls.from_df(df)
 
