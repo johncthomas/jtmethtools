@@ -126,7 +126,15 @@ def alignment_overlaps_region(
 
 def get_bismark_met_str(a: AlignedSegment) -> str:
     tag, met = a.get_tags()[2]
-    assert tag == 'XM'
+    try:
+        assert tag == 'XM'
+    except AssertionError:
+        tags = a.get_tags()
+        for t, m in tags:
+            if t == 'XM':
+                tag, met = t, m
+        if tag != 'XM':
+            raise ValueError(f"Can't find XM tag in alignment {a.query_name}")
     return met
 
 def write_bam_from_pysam(
