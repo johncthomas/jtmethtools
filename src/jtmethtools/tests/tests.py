@@ -81,7 +81,7 @@ def test_read_write_array():
 def test_save_images():
     start, end = 90, 110
     window = read_data.window(start=start, end=end, chrm='1')
-    img = jtmethtools.images.ImageMaker(window, start, end)
+    img = jtmethtools.images.ImageMaker(window, start, end, rows=20)
 
     fig, axes = img._plot_test_images()
     plt.savefig(TESTDIR/'channels.png', dpi=150, )
