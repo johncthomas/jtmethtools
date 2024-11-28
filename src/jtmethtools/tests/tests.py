@@ -14,6 +14,7 @@ from jtmethtools.util import (
     set_logger
 )
 
+import tempfile
 
 from jtmethtools import alignment_data
 logger.remove()
@@ -68,6 +69,13 @@ def test_read_write_array():
     write_array(arr2, TESTDIR / 'arrtest2.tar')
     arr2_read, _ = read_array(TESTDIR/'arrtest2.tar')
     assert arr2_read.dtype == np.float32
+
+    # check it works with temp files.
+    with tempfile.NamedTemporaryFile('w') as tmpf:
+        write_array(arr2, tmpf.name)
+        arr2_read2, _ = read_array(tmpf.name)
+
+        assert np.all(arr == arr2_read2)
 
 
 def test_save_images():
