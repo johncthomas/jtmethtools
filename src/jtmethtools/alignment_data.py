@@ -592,7 +592,7 @@ def process_bam(bamfn, regionsfn:str|Path,
 
     def check_hits_region() -> bool:
         if filter_by_region:
-            return len(aln.hit_regions(regions)) > 0
+            return len(aln.get_hit_regions(regions)) > 0
         else:
             return True
 

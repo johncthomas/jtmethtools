@@ -325,7 +325,7 @@ class Alignment:
             return False
         return True
 
-    def hit_regions(self, regions:Regions) -> list[str]:
+    def get_hit_regions(self, regions:Regions) -> list[str]:
         regions = [alignment_overlaps_region(a, regions)
                    for a in self.alignments]
         regions = list(set([r for r in regions if r]))
@@ -333,7 +333,7 @@ class Alignment:
 
 
 
-def _iter_bam_pe(
+def iter_bam_pe(
         bam:str|AlignmentFile,
         start_stop:Tuple[int, int]=(0, np.inf)
 ) -> Tuple[AlignedSegment, AlignedSegment|None]:
@@ -371,7 +371,7 @@ def _iter_bam_pe(
         yield aln_prev, None
 
 
-def _iter_bam_se(
+def iter_bam_se(
         bam:str|AlignmentFile,
         start_stop:Tuple[int, int]=(0, np.inf)
 ) -> Tuple[AlignedSegment, AlignedSegment|None]:
@@ -406,11 +406,11 @@ def iter_bam(
     Use start_stop for splitting a bam file for, e.g. multiprocessing.
     """
     if paired_end:
-        bam = _iter_bam_pe(bam, start_stop)
+        bam = iter_bam_pe(bam, start_stop)
         for aln in bam:
             yield Alignment(*aln, kind=kind)
     else:
-        bam = _iter_bam_se(bam, start_stop)
+        bam = iter_bam_se(bam, start_stop)
         for aln in bam:
             yield Alignment(aln, kind=kind)
     return None
