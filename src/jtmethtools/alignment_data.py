@@ -46,8 +46,6 @@ FalsePA = pa.scalar(False, type=pa.bool_())
 _ntcodes = dict(zip('ACGTN', np.array([1, 2, 3, 4, 0], dtype=np.uint8)))
 NT_CODES = _ntcodes | {v:k for k, v in _ntcodes.items()}
 
-print(NT_CODES)
-
 _bsmk_codes = dict(zip('.ZHXU', np.array([0, 1, 2, 3, 4], dtype=np.uint8)))
 BISMARK_CODES = _bsmk_codes | {v:k for k, v in _bsmk_codes.items()}
 
