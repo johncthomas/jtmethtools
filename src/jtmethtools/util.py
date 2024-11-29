@@ -131,7 +131,7 @@ def read_array(file: str|Path|typing.IO, ) -> Tuple[NDArray, dict]:
         tararg = {'name':file}
     else:
         tararg = {'fileobj':file}
-    print(tararg)
+
     with tarfile.open(**tararg, mode="r") as tar:
 
         # Extract the metadata file and parse it
