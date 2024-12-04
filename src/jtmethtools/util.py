@@ -24,7 +24,7 @@ def set_logger(min_level='DEBUG'):
 
     logger.add(lambda msg: print(f"\033[96m{msg}\033[0m"), level="INFO", format="{message}")
 
-set_logger()
+
 
 
 SplitTable = dict[str, pd.DataFrame]
@@ -87,7 +87,8 @@ import json
 def write_array(
         array: NDArray,
         outfile: str|Path|typing.IO,
-        additional_metadata: dict = None
+        additional_metadata: dict = None,
+        gzip:bool='infer',
 ) -> None:
     """Write a tar file that contains the binary data and metadata
     to recreate the original numpy array.
@@ -100,7 +101,11 @@ def write_array(
     else:
         tararg = {'fileobj':outfile}
 
-    with tarfile.open(**tararg, mode="w") as tar:
+    if gzip == 'infer':
+        gzip = True if str(outfile).endswith('.gz') else False
+    mode = 'w:gz' if gzip else 'w'
+
+    with tarfile.open(**tararg, mode=mode) as tar:
         # Save the binary data of the array
         with tempfile.NamedTemporaryFile('w') as tmpf:
 
@@ -125,14 +130,23 @@ def write_array(
 
 
 
-def read_array(file: str|Path|typing.IO, ) -> Tuple[NDArray, dict]:
+def read_array(file: str|Path|typing.IO,
+               gzip='infer') -> Tuple[NDArray, dict]:
     """Read file created by `write_array`"""
     if isinstance(file, str) or isinstance(file, Path):
         tararg = {'name':file}
     else:
         tararg = {'fileobj':file}
 
-    with tarfile.open(**tararg, mode="r") as tar:
+    if gzip == 'infer':
+        if str(file).endswith('.gz'):
+            gzip = True
+        else:
+            gzip = False
+
+    mode = 'r:gz' if gzip else 'r'
+
+    with tarfile.open(**tararg, mode=mode) as tar:
 
         # Extract the metadata file and parse it
         meta_file = tar.extractfile("metadata.json").read().decode('utf-8')
