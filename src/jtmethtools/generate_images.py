@@ -5,7 +5,7 @@ import argparse
 import datetime
 
 
-def run(
+def run_image_gen(
         bam:Pathesque,
         regions:Pathesque,
         outdir:Pathesque,
@@ -104,7 +104,7 @@ def parse_args():
 
     plot_parser = subparsers.add_parser(
         "plot",
-        help="Draw image layers and write as PNG."
+        help="Draw image layers."
     )
 
     plot_parser.add_argument(
@@ -153,7 +153,7 @@ def main():
         logger.remove()
         if not args.quiet:
             logger.add(print, level='INFO')
-        run(
+        run_image_gen(
             bam=Path(args.bam),
             regions=Path(args.regions),
             outdir=Path(args.outdir),
