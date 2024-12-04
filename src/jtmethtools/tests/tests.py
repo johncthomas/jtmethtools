@@ -78,13 +78,13 @@ def test_read_write_array():
         assert np.all(arr == arr2_read2)
 
 
-def test_save_images():
-    start, end = 90, 110
-    window = read_data.window(start=start, end=end, chrm='1')
-    img = jtmethtools.images.ImageMaker(window, start, end, rows=20)
-
-    fig, axes = img._plot_test_images()
-    plt.savefig(TESTDIR/'channels.png', dpi=150, )
+# def test_save_images():
+#     start, end = 90, 110
+#     window = read_data.window(start=start, end=end, chrm='1')
+#     img = jtmethtools.images.ImageMaker(window, start, end, rows=20)
+#
+#     fig, axes = img._plot_test_images()
+#     plt.savefig(TESTDIR/'channels.png', dpi=150, )
 
 
 def check_filtering(rd, rid_in, rid_not_in):

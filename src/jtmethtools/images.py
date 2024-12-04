@@ -263,12 +263,38 @@ class ImageMaker:
         return images
 
 
-    def plot_images(self, image_types:Collection[str]):
-        import matplotlib.pyplot as plt
-
-        layers: dict[str, NDArray] = self.get_images(
-            image_types
-        )
+    # def plot_images(self, image_types:Collection[str]):
+    #     import matplotlib.pyplot as plt
+    #
+    #     layers: dict[str, NDArray] = self.get_images(
+    #         image_types
+    #     )
+    #
+    #     n = len(layers)
+    #     fig, axes = plt.subplots(1, n, figsize=(8*n, 1.6*3) )
+    #     if isinstance(axes, plt.Axes):
+    #         axes = [axes]
+    #     logger.debug(axes)
+    #     for axi, (k, img) in enumerate(layers.items()):
+    #         plot_layer(img, ax=axes[axi])
+    #         axes[axi].set_title(k)
+    #     return fig, axes
+    #
+    # def _plot_test_images(self):
+    #     import matplotlib.pyplot as plt
+    #     layers:dict[str, NDArray] = self.get_images(
+    #         ('bases', 'methylated_cpg', 'methylated_other', 'methylated_any',
+    #          'bases_met_as_fifth', 'strand', 'mapping_quality', 'phred',
+    #          )
+    #     )
+    #     n = len(layers)
+    #     fig, axes = plt.subplots(1, n, figsize=(9*n, 1.8*3) )
+    #     logger.debug(axes)
+    #     for axi, (i, img) in enumerate(layers.items()):
+    #
+    #         plot_layer(img, ax=axes[axi])
+    #         axes[axi].set_title(i)
+    #     return fig, axes
 
     @staticmethod
     def available_layers() -> list[str]:
@@ -282,8 +308,11 @@ class Image:
     channel_names: list[str]
     name:str='noname'
 
-    def to_file(self, outfn:Pathesque):
-        """Write array with metadata"""
+    def to_file(self, outfn:Pathesque,):
+        """Write array with metadata.
+
+        File will be gzipped if outfn endswith ".gz"."""
+
         write_array(self.array, outfn,
                     additional_metadata={
                         'channel_names':self.channel_names,
@@ -306,6 +335,23 @@ class Image:
             name=name
         )
 
+    def to_dict(self) -> dict[str, PixelArray]:
+        return {k:self.array[i] for i, k in enumerate(self.channel_names)}
+
+    def plot(self, ):
+        import matplotlib.pyplot as plt
+
+        layers = self.to_dict()
+
+        n = len(layers)
+        fig, axes = plt.subplots(1, n, figsize=(8*n, 1.6*3) )
+        if isinstance(axes, plt.Axes):
+            axes = [axes]
+        logger.debug(axes)
+        for axi, (k, img) in enumerate(layers.items()):
+            plot_layer(img, ax=axes[axi])
+            axes[axi].set_title(k)
+        return fig, axes
 
 def generate_images_in_regions(
         data:AlignmentsData,
@@ -327,17 +373,15 @@ def generate_images_in_regions(
         if max_other_met is not np.inf:
             window = window.filter_by_noncpg_met(max_other_met)
 
-        imgfactory = ImageMaker(window, posrange.start, posrange.end)
-        imagedict = imgfactory.get_images(image_types)
+        imgfactory = ImageMaker(window, posrange.start, posrange.end, rows=max_alignments)
+        imagedict = imgfactory.get_images(layers)
         images = list(imagedict.values())
         n_rows = images[0].shape[0]
 
         if n_rows <= min_alignments:
             logger.debug(f"Skipping {posrange.name} for two few alignments")
             continue
-        if n_rows > max_alignments:
-            imagedict = {k:sampledown_rows(arr, max_alignments)
-                         for k, arr in imagedict.items()}
+
 
         image = Image.from_dict(imagedict)
 
@@ -380,9 +424,21 @@ def ttests(test_bam_fn, test_regions_fn, testoutdir,
     for l, a in generate_images_in_regions(
         rd,
         regions=Regions.from_file(test_regions_fn),
-        image_types=('bases', 'bases_met_as_fifth', 'phred', 'mapping_quality')
+        layers=('bases', 'bases_met_as_fifth', 'phred', 'mapping_quality'),
+        max_alignments=50
     ):
+        a: Image
+        l: LociRange
         image_shapes[a.array.shape] += 1
+        fn = testoutdir/f'image.{l.name}.tar.gz'
+        a.to_file(fn)
+        a2 = Image.from_file(fn)
+        print(a)
+        print('\n*****************\n\n')
+        print(a2)
+        break
+
+
     next5 = datetime.datetime.now()
     print('Time to generate all images: ', next5 - next4)
     print(image_shapes)
@@ -394,24 +450,6 @@ def ttests(test_bam_fn, test_regions_fn, testoutdir,
     # #imgd = img.get_images([])
     #
     # plt.savefig('/home/jcthomas/DevLab/NIMBUS/Figures/test_images.1.png')
-
-def ttest_imagesize(
-        test_bam_fn, test_regions_fn, testoutdir,
-        *, delete_first=False
-):
-    import datetime
-    testoutdir = Path(testoutdir)
-    if delete_first:
-        if os.path.isdir(testoutdir):
-            for f in os.listdir(testoutdir):
-                os.remove(testoutdir / f)
-            os.rmdir(testoutdir, )
-    # get current time for timedelta
-    start = datetime.datetime.now()
-    rd = process_bam(
-        test_bam_fn,
-        test_regions_fn
-    )
 
 if __name__ == '__main__':
     logger.remove()
@@ -427,4 +465,4 @@ if __name__ == '__main__':
     bm = home/'DevLab/NIMBUS/Data/test/bismark_10k.bam'
     rg = home/'DevLab/NIMBUS/Reference/regions-table.canary.4k.tsv'
     out = home/'DevLab/NIMBUS/Data/test/readdata_structure_test'
-    ttest_imagesize(bm, rg, out, delete_first=True)
+    ttests(bm, rg, out, )
