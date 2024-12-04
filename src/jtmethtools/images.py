@@ -12,14 +12,14 @@ from jtmethtools.alignment_data import (
 from jtmethtools.alignments import LociRange, Regions
 from jtmethtools.util import write_array, read_array
 from loguru import logger
-from numpy._typing import NDArray
+from numpy.typing import NDArray
 from pyarrow import compute as compute
 
 PIXEL_DTYPE = np.float32
 
 PixelArray = NDArray[PIXEL_DTYPE]
 
-def plot_image(img:PixelArray, ax=None, **imshow_kw):
+def plot_layer(img:PixelArray, ax=None, **imshow_kw):
     import matplotlib.pyplot as plt
     if ax:
         plt.sca(ax)
@@ -28,6 +28,12 @@ def plot_image(img:PixelArray, ax=None, **imshow_kw):
 
 
 class ImageMaker:
+    """Methods for generating image layers for different read stats,
+    across given window.
+
+    All methods for image layers start with "layer_*". Other useful
+    methods will probably start with "get_*" or "plot_*".
+    """
     # __slots__ = ['window', 'positions', 'unique_positions',
     #              'unique_rowids', 'position_indices', 'row_indices',
     #              '_readid_image', 'width', 'rows',
@@ -147,7 +153,7 @@ class ImageMaker:
         return np.copy(self._readid_image)
 
 
-    def methylated_cpg(self) -> PixelArray:
+    def layer_methylated_cpg(self) -> PixelArray:
         """1 where CpG is methylated, null_grey otherwise"""
         cpg_met = compute.equal(self.window.locus_data.methylation, pa.scalar(1))
         image = self._protoimage(cpg_met)
@@ -155,7 +161,7 @@ class ImageMaker:
 
         return self._finish_image(image)
 
-    def methylated_other(self) -> PixelArray:
+    def layer_methylated_other(self) -> PixelArray:
         """1 where non-cpg methylated, null_grey otherwise"""
         other_met = compute.greater(self.window.locus_data.methylation, pa.scalar(1))
         image = self._protoimage(other_met)
@@ -164,7 +170,7 @@ class ImageMaker:
         return self._finish_image(image)
 
 
-    def methylated_any(self) -> PixelArray:
+    def layer_methylated_any(self) -> PixelArray:
         """1 where non-cpg methylated, null_grey otherwise"""
         other_met = compute.greater(self.window.locus_data.methylation, pa.scalar(0))
         image = self._protoimage(other_met)
@@ -173,7 +179,7 @@ class ImageMaker:
         return self._finish_image(image)
 
 
-    def bases(self) -> PixelArray:
+    def layer_bases(self) -> PixelArray:
         """Shades of grey for each colour"""
         image = self._protoimage(
             self.window.locus_data.nucleotide
@@ -186,11 +192,11 @@ class ImageMaker:
         return self._finish_image(image)
 
 
-    def bases_met_as_fifth(self) -> PixelArray:
+    def layer_bases_met_as_fifth(self) -> PixelArray:
         """The normal 4 plus methylated C"""
         image = self._protoimage(self.window.locus_data.nucleotide)
         image = self._finish_image(image)
-        metimg = self.methylated_any()
+        metimg = self.layer_methylated_any()
         mask = metimg == 1
         image[mask] = 5
 
@@ -200,7 +206,7 @@ class ImageMaker:
         return image
 
 
-    def strand(self) -> PixelArray:
+    def layer_strand(self) -> PixelArray:
         """light grey for rev strand, white for for strand."""
         image = self._read_id_image_copy
         for rid in self.unique_rowids:
@@ -211,7 +217,7 @@ class ImageMaker:
         return self._finish_image(image)
 
 
-    def mapping_quality(self) -> PixelArray:
+    def layer_mapping_quality(self) -> PixelArray:
         """Each read a shade of grey proportional to mapping quality"""
         image = self._read_id_image_copy
         for rid in self.unique_rowids:
@@ -225,7 +231,7 @@ class ImageMaker:
         return self._finish_image(image)
 
 
-    def phred(self) -> PixelArray:
+    def layer_phred(self) -> PixelArray:
         image = self._protoimage(self.window.locus_data.phred_scores)
         image /= self.window.max_phred
 
@@ -242,10 +248,12 @@ class ImageMaker:
             self,
             image_types:Collection[str]
     ) -> dict[str, PixelArray]:
+        """Get pixel arrays by layer name (with or without layer_*)"""
 
         images = {}
         for meth in image_types:
-
+            if not meth.startswith('layer_'):
+                meth = 'layer_'+meth
             try:
                 img = getattr(self, meth)()
             except AttributeError:
@@ -262,33 +270,10 @@ class ImageMaker:
             image_types
         )
 
-        n = len(layers)
-        fig, axes = plt.subplots(1, n, figsize=(8*n, 1.6*3) )
-        if isinstance(axes, plt.Axes):
-            axes = [axes]
-        logger.debug(axes)
-        for axi, (k, img) in enumerate(layers.items()):
-            plot_image(img, ax=axes[axi])
-            axes[axi].set_title(k)
-        return fig, axes
-
-    def _plot_test_images(self):
-        import matplotlib.pyplot as plt
-        layers:dict[str, NDArray] = self.get_images(
-            ('bases', 'methylated_cpg', 'methylated_other', 'methylated_any',
-             'bases_met_as_fifth', 'strand', 'mapping_quality', 'phred',
-             )
-        )
-        n = len(layers)
-        fig, axes = plt.subplots(1, n, figsize=(9*n, 1.8*3) )
-        logger.debug(axes)
-        for axi, (i, img) in enumerate(layers.items()):
-
-            plot_image(img, ax=axes[axi])
-            axes[axi].set_title(i)
-        return fig, axes
-
-
+    @staticmethod
+    def available_layers() -> list[str]:
+        self = ImageMaker
+        return [l.replace('layer_', '') for l in dir(self) if l.startswith('layer_')]
 
 
 @define
@@ -325,7 +310,7 @@ class Image:
 def generate_images_in_regions(
         data:AlignmentsData,
         regions:Regions,
-        image_types:Collection[str],
+        layers:Collection[str],
         min_cpg=0,
         min_mapq=0,
         max_other_met:int=np.inf,
