@@ -36,6 +36,8 @@ from jtmethtools.util import (
     logger
 )
 
+logger.remove()
+
 Pathesque = str | Path | PathLike[str]
 
 # pyarrow bools aren't recognised as bools by python, they
