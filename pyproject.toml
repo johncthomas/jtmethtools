@@ -17,3 +17,6 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[project.scripts]
+jtm-generate-images = "jtmethtools.generate_images:main"
