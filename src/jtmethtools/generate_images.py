@@ -1,5 +1,7 @@
 import os
 
+import numpy as np
+
 from jtmethtools.images import *
 import argparse
 import datetime
@@ -11,6 +13,7 @@ def run_image_gen(
         outdir:Pathesque,
         layers:list[str],
         image_height:int,
+        **imggen_kwargs
 ):
 
 
@@ -33,7 +36,8 @@ def run_image_gen(
         rd,
         regions=Regions.from_file(regions),
         layers=layers,
-        max_alignments=image_height
+        rows=image_height,
+        **imggen_kwargs
     ):
         pixarrays: dict[str, PixelArray]
         loci: LociRange
@@ -90,7 +94,25 @@ def parse_args():
         '--height', '-H',
         type=int,
         default=500,
-        help="Maximum number of alignments (image height). Default: 500."
+        help="Maximum number of alignments (image height)."
+    )
+    run_parser.add_argument(
+        '--min-cpg', '-c',
+        type=int,
+        default=1,
+        help="Minimum number of CpGs within a read to include the read."
+    )
+    run_parser.add_argument(
+        '--max-other-met', '-m',
+        type=int,
+        default=np.inf,
+        help="Maximum number of non-CpG methylations allowed."
+    )
+    run_parser.add_argument(
+        '--min-alignments', '-a',
+        type=int,
+        default=10,
+        help="Minimum number of alignments for region to write image arrays for the region."
     )
     run_parser.add_argument(
         '--quiet',
