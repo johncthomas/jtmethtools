@@ -82,6 +82,7 @@ class ImageMaker:
         logger.trace(rids)
 
         rows += 1 # the ones we expect plus the padder
+        self.n_alignments = len(np.unique(rids))
         rids = np.concatenate([
             rids,
             np.ones(shape=(width,), dtype=rids.dtype) * PAD_READID
@@ -362,11 +363,12 @@ def generate_images_in_regions(
         max_other_met:int=np.inf,
         min_alignments=0,
         rows=500,
-) -> Tuple[LociRange, dict[str, PixelArray]]:
+) -> Tuple[LociRange, dict[str, PixelArray], dict]:
 
     """Genarate a dictionary of image arrays."""
 
     for posrange in regions.iter():
+        metadata = {}
         window = data.window(posrange)
         if min_cpg:
             window = window.filter_by_ncpg(min_cpg)
@@ -376,15 +378,16 @@ def generate_images_in_regions(
             window = window.filter_by_noncpg_met(max_other_met)
 
         imgfactory = ImageMaker(window, posrange.start, posrange.end, rows=rows)
-        imagedict = imgfactory.get_pixarray_dict(layers)
-        images = list(imagedict.values())
-        n_rows = images[0].shape[0]
-
-        if n_rows <= min_alignments:
+        n_alignments = imgfactory.n_alignments
+        if n_alignments <= min_alignments:
             logger.debug(f"Skipping {posrange.name} for too few alignments")
             continue
 
-        yield posrange, imagedict
+        imagedict = imgfactory.get_pixarray_dict(layers)
+        images = list(imagedict.values())
+
+        metadata['n_rows_with_alignment'] = n_alignments
+        yield posrange, imagedict, metadata
 
 
 def ttests(test_bam_fn, test_regions_fn, testoutdir,
@@ -420,7 +423,7 @@ def ttests(test_bam_fn, test_regions_fn, testoutdir,
     next4 = datetime.datetime.now()
     from collections import Counter
     image_shapes = Counter()
-    for l, a in generate_images_in_regions(
+    for l, a, mdat in generate_images_in_regions(
         rd,
         regions=Regions.from_file(test_regions_fn),
         layers=('bases', 'bases_met_as_fifth', 'phred', 'mapping_quality'),
@@ -430,22 +433,22 @@ def ttests(test_bam_fn, test_regions_fn, testoutdir,
         l: LociRange
 
 
-        if np.sum(a['phred']) > 0:
-            break
-    print(l.name)
-    for k, img in a.items():
-        fn = testoutdir / f'image.{l.name}.{k}.tar.gz'
-        write_array(img, fn, gzip=True)
-    a2 = read_array(fn, gzip=True)
-    print(a)
-    print('\n*****************\n\n')
-    print(a2)
-    plot_layer(a['phred'])
-    import matplotlib.pyplot as plt
-    plt.savefig(testoutdir/f'image.{l.name}.phred.png')
+        if mdat['n_rows_with_alignment'] > 20:
+
+            print(l.name)
+            for k, img in a.items():
+                fn = testoutdir / f'image.{l.name}.{k}.tar.gz'
+                write_array(img, fn, gzip=True)
+            # a2 = read_array(fn, gzip=True)
+            # print(a)
+            # print('\n*****************\n\n')
+            # print(a2)
+            # plot_layer(a['phred'])
+            import matplotlib.pyplot as plt
+            plt.savefig(testoutdir/f'image.{l.name}.phred.png')
     next5 = datetime.datetime.now()
     print('Time to generate all images: ', next5 - next4)
-    print(image_shapes)
+
     # img = ImageMaker(window)
     # #print(img.methylated_cpg())
     # print(img.methylated_cpg().shape)
@@ -470,3 +473,4 @@ if __name__ == '__main__':
     rg = home/'DevLab/NIMBUS/Reference/regions-table.canary.4k.tsv'
     out = home/'DevLab/NIMBUS/Data/test/readdata_structure_test'
     ttests(bm, rg, out, delete_first=True)
+

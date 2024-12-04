@@ -32,7 +32,7 @@ def run_image_gen(
     logger.info('Time to process BAM:', start - next1)
 
     n_images = 0
-    for loci, pixarrays in generate_images_in_regions(
+    for loci, pixarrays, metadata in generate_images_in_regions(
         rd,
         regions=Regions.from_file(regions),
         layers=layers,
