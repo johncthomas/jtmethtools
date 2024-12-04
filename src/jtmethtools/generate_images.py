@@ -29,18 +29,20 @@ def run_image_gen(
     logger.info('Time to process BAM:', start - next1)
 
     n_images = 0
-    for loci, image in generate_images_in_regions(
+    for loci, pixarrays in generate_images_in_regions(
         rd,
         regions=Regions.from_file(regions),
         layers=layers,
         max_alignments=image_height
     ):
-        image: Image
+        pixarrays: dict[str, PixelArray]
         loci: LociRange
 
-        fn = outdir/f'image.{loci.name}.tar.gz'
-        image.to_file(fn)
-        n_images += 1
+        for layer_name, img in pixarrays.items():
+            n_images += 1
+            fn = outdir / f'image.{loci.name}.{layer_name}.tar.gz'
+            write_array(img, fn, gzip=True)
+
     time_after_writing = datetime.datetime.now()
     logger.info(f"Time to write {n_images} images: {time_after_writing - next1}")
 

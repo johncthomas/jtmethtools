@@ -244,7 +244,7 @@ class ImageMaker:
         return self._finish_image(image)
 
 
-    def get_images(
+    def get_pixarray_dict(
             self,
             image_types:Collection[str]
     ) -> dict[str, PixelArray]:
@@ -258,8 +258,8 @@ class ImageMaker:
                 img = getattr(self, meth)()
             except AttributeError:
                 raise AttributeError(f"Unknown image type: {meth}")
-
-            images[meth] = img
+            # key without "layer_"
+            images[meth[6:]] = img
         return images
 
 
@@ -361,9 +361,11 @@ def generate_images_in_regions(
         min_mapq=0,
         max_other_met:int=np.inf,
         min_alignments=0,
-        max_alignments=500,
-) -> Tuple[LociRange, Iterator[Image]]:
+        rows=500,
+) -> Tuple[LociRange, dict[str, PixelArray]]:
+
     """Genarate a dictionary of image arrays."""
+
     for posrange in regions.iter():
         window = data.window(posrange)
         if min_cpg:
@@ -373,19 +375,16 @@ def generate_images_in_regions(
         if max_other_met is not np.inf:
             window = window.filter_by_noncpg_met(max_other_met)
 
-        imgfactory = ImageMaker(window, posrange.start, posrange.end, rows=max_alignments)
-        imagedict = imgfactory.get_images(layers)
+        imgfactory = ImageMaker(window, posrange.start, posrange.end, rows=rows)
+        imagedict = imgfactory.get_pixarray_dict(layers)
         images = list(imagedict.values())
         n_rows = images[0].shape[0]
 
         if n_rows <= min_alignments:
-            logger.debug(f"Skipping {posrange.name} for two few alignments")
+            logger.debug(f"Skipping {posrange.name} for too few alignments")
             continue
 
-
-        image = Image.from_dict(imagedict)
-
-        yield posrange, image
+        yield posrange, imagedict
 
 
 def ttests(test_bam_fn, test_regions_fn, testoutdir,
@@ -425,20 +424,25 @@ def ttests(test_bam_fn, test_regions_fn, testoutdir,
         rd,
         regions=Regions.from_file(test_regions_fn),
         layers=('bases', 'bases_met_as_fifth', 'phred', 'mapping_quality'),
-        max_alignments=50
+        rows=50
     ):
-        a: Image
+        a: dict[str, PixelArray]
         l: LociRange
-        image_shapes[a.array.shape] += 1
-        fn = testoutdir/f'image.{l.name}.tar.gz'
-        a.to_file(fn)
-        a2 = Image.from_file(fn)
-        print(a)
-        print('\n*****************\n\n')
-        print(a2)
-        break
 
 
+        if np.sum(a['phred']) > 0:
+            break
+    print(l.name)
+    for k, img in a.items():
+        fn = testoutdir / f'image.{l.name}.{k}.tar.gz'
+        write_array(img, fn, gzip=True)
+    a2 = read_array(fn, gzip=True)
+    print(a)
+    print('\n*****************\n\n')
+    print(a2)
+    plot_layer(a['phred'])
+    import matplotlib.pyplot as plt
+    plt.savefig(testoutdir/f'image.{l.name}.phred.png')
     next5 = datetime.datetime.now()
     print('Time to generate all images: ', next5 - next4)
     print(image_shapes)
@@ -465,4 +469,4 @@ if __name__ == '__main__':
     bm = home/'DevLab/NIMBUS/Data/test/bismark_10k.bam'
     rg = home/'DevLab/NIMBUS/Reference/regions-table.canary.4k.tsv'
     out = home/'DevLab/NIMBUS/Data/test/readdata_structure_test'
-    ttests(bm, rg, out, )
+    ttests(bm, rg, out, delete_first=True)
