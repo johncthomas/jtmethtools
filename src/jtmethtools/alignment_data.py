@@ -379,6 +379,7 @@ class LocusTable:
         return self.filter(compute.is_in(self.readID, read_ids))
 
     def filter_noncpg_met_per_read(self, max_noncpg=0):
+        # filter by methylation type
         noncpg_mask = compute.greater_equal(
             self.methylation,
             pa.scalar(2)
