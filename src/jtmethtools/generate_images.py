@@ -116,6 +116,12 @@ def parse_args():
         help="Minimum number of alignments for region to write image arrays for the region."
     )
     run_parser.add_argument(
+        '--min-mapq', '-q',
+        type=int,
+        default=40,
+        help="Minimum number of CpGs within a read to include the read."
+    )
+    run_parser.add_argument(
         '--quiet',
         action='store_true',
         help="Suppress logging output."
