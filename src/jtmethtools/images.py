@@ -426,8 +426,10 @@ def ttests(test_bam_fn, test_regions_fn, testoutdir,
     for l, a, mdat in generate_images_in_regions(
         rd,
         regions=Regions.from_file(test_regions_fn),
-        layers=('bases', 'bases_met_as_fifth', 'phred', 'mapping_quality'),
-        rows=50
+        layers=('bases', 'methylated_other', 'phred', 'mapping_quality', 'methylated_cpg'),
+        rows=50,
+        max_other_met=10,
+        min_mapq=0
     ):
         a: dict[str, PixelArray]
         l: LociRange
@@ -435,17 +437,16 @@ def ttests(test_bam_fn, test_regions_fn, testoutdir,
 
         if mdat['n_rows_with_alignment'] > 20:
 
-            print(l.name)
+            import matplotlib.pyplot as plt
+
             for k, img in a.items():
                 fn = testoutdir / f'image.{l.name}.{k}.tar.gz'
                 write_array(img, fn, gzip=True)
-            # a2 = read_array(fn, gzip=True)
-            # print(a)
-            # print('\n*****************\n\n')
-            # print(a2)
-            # plot_layer(a['phred'])
-            import matplotlib.pyplot as plt
-            plt.savefig(testoutdir/f'image.{l.name}.phred.png')
+                plot_layer(img)
+                plt.savefig(testoutdir / f'image.{l.name}.{k}.png')
+
+
+        print(l.name, mdat)
     next5 = datetime.datetime.now()
     print('Time to generate all images: ', next5 - next4)
 
@@ -470,7 +471,7 @@ if __name__ == '__main__':
         home = Path('/home/jcthomas/')
     #bm = home/'data/canary/sorted_qname/CMDL19003173_1_val_1_bismark_bt2_pe.deduplicated.bam'
     bm = home/'DevLab/NIMBUS/Data/test/bismark_10k.bam'
-    rg = home/'DevLab/NIMBUS/Reference/regions-table.canary.4k.tsv'
+    rg = home/'DevLab/NIMBUS/Data/test/regions-table.4for10kbam.tsv'
     out = home/'DevLab/NIMBUS/Data/test/readdata_structure_test'
     ttests(bm, rg, out, delete_first=True)
 
