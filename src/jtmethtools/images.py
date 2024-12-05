@@ -258,7 +258,7 @@ class ImageMaker:
             try:
                 img = getattr(self, meth)()
             except AttributeError:
-                raise AttributeError(f"Unknown image type: {meth}")
+                raise AttributeError(f"Unknown image type: {meth}.\nAvailable layers: {self.available_layers()}")
             # key without "layer_"
             images[meth[6:]] = img
         return images
