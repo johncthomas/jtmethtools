@@ -12,10 +12,11 @@ def run_image_gen(
         regions:Pathesque,
         outdir:Pathesque,
         layers:list[str],
-        image_height:int,
+        height:int,
         **imggen_kwargs
 ):
 
+    bam, regions, outdir = [Path(x) for x in (bam, regions, outdir)]
 
     logger.info(
         f"{bam=}, {regions=}, {outdir=}, {layers=}"
@@ -36,7 +37,7 @@ def run_image_gen(
         rd,
         regions=Regions.from_file(regions),
         layers=layers,
-        rows=image_height,
+        rows=height,
         **imggen_kwargs
     ):
         pixarrays: dict[str, PixelArray]
@@ -171,19 +172,16 @@ def plot_an_image(array_file:Pathesque, out_file:Pathesque):
 
 def main():
     args = parse_args()
+
     if args.command == "run":
+        del args.command
         if not check_layers(args.layers):
             exit(1)
         logger.remove()
         if not args.quiet:
             logger.add(print, level='INFO')
-        run_image_gen(
-            bam=Path(args.bam),
-            regions=Path(args.regions),
-            outdir=Path(args.outdir),
-            layers=args.layers,
-            image_height=args.height,
-        )
+        del args.quiet
+        run_image_gen(**vars(args))
     elif args.command == "layers":
         print_available_layers()
     elif args.command == 'plot':
