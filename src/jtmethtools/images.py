@@ -368,6 +368,7 @@ def generate_images_in_regions(
     """Genarate a dictionary of image arrays."""
 
     for posrange in regions.iter():
+        logger.info(f"Generating images for region {posrange.name}")
         metadata = {}
         window = data.window(posrange)
         if min_cpg:
@@ -379,6 +380,7 @@ def generate_images_in_regions(
 
         imgfactory = ImageMaker(window, posrange.start, posrange.end, rows=rows)
         n_alignments = imgfactory.n_alignments
+        logger.info(f"{n_alignments} found for this region")
         if n_alignments <= min_alignments:
             logger.debug(f"Skipping {posrange.name} for too few alignments")
             continue

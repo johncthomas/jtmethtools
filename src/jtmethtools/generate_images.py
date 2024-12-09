@@ -185,7 +185,8 @@ def main():
             exit(1)
         logger.remove()
         if not args.quiet:
-            logger.add(print, level='INFO')
+            from jtmethtools.util import set_logger
+            set_logger('INFO')
         del args.quiet
         run_image_gen(**vars(args))
     elif args.command == "layers":
