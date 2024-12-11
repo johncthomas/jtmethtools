@@ -121,6 +121,8 @@ class ImageMaker:
         ])
 
         # Initialize the output array with NaN values
+        # (note: nans removed by _finish_image, if they're filled in
+        #  before then it'll mess up the sorting).
         output_array = np.full(
             (self.rows, len(self.unique_positions)),
             np.nan
@@ -142,10 +144,23 @@ class ImageMaker:
     @staticmethod
     def _finish_image(image, fillval=0) -> PixelArray:
         """Fill missing (np.nan) positions in image with 0,
-        or fillval & remove bottom row (which is only there
-         to pad the width)."""
+        or fillval, sort the reads by starting position, &
+        remove bottom row (which is only there to pad the width).
+        """
+        image = image[:-1]
+
+        # sort by position of the first non-nan value
+        notnan = np.invert(np.isnan(image))
+        first_true = np.where(
+            notnan.any(axis=1),
+            notnan.argmax(axis=1),
+            notnan.shape[1] # if there's no NaN somehow
+        )
+
+        image = image[np.argsort(first_true)]
+
         image[np.isnan(image)] = fillval
-        return image[:-1]
+        return image
 
     @property
     def _read_id_image_copy(self) -> PixelArray:
