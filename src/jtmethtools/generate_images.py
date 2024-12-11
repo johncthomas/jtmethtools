@@ -13,6 +13,7 @@ def run_image_gen(
         outdir:Pathesque,
         layers:list[str],
         height:int,
+        single_eneded=False,
         **imggen_kwargs
 ):
 
@@ -28,6 +29,7 @@ def run_image_gen(
     rd = process_bam(
         bam,
         regions,
+
     )
     next1 = datetime.datetime.now()
     logger.info('Time to process BAM:', start - next1)
@@ -120,6 +122,11 @@ def parse_args():
         type=int,
         default=40,
         help="Minimum number of CpGs within a read to include the read."
+    )
+    run_parser.add_argument(
+        '--single-ended',
+        action='store_true',
+        help="Assume single-ended reads (removes requirement for BAM to be sorted in any way."
     )
     run_parser.add_argument(
         '--quiet',

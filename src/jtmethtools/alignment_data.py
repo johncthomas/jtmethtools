@@ -350,10 +350,10 @@ class LocusTable:
             d = eval(f.read())
         return cls(table, **d)
 
-    @classmethod
-    def from_parquet(cls, fn:str|Path):
-        """Read table from Parquet format"""
-        return cls(parquet.read_table(fn))
+    # @classmethod
+    # def from_parquet(cls, fn:str|Path):
+    #     """Read table from Parquet format"""
+    #     return cls(parquet.read_table(fn))
 
     def count_cpg_per_read(self):
         """Count the number of CpGs in each read"""
@@ -579,12 +579,14 @@ def print_memory_footprint():
 
 
 def process_bam(bamfn, regionsfn:str|Path,
-                filter_by_region=True,  include_read_name=False) -> AlignmentsData:
+                filter_by_region=True,
+                include_read_name=False,
+                single_ended=False) -> AlignmentsData:
     regionsfn = str(regionsfn)
     # get the number of reads and the number of aligned bases
     n_reads = 0
     n_bases = 0
-    paired = False
+    paired = not single_ended
 
     if regionsfn.endswith('.tsv'):
         regions = Regions.from_file(regionsfn)
@@ -610,17 +612,13 @@ def process_bam(bamfn, regionsfn:str|Path,
     print_memory_footprint()
 
     bam = AlignmentFile(bamfn)
-    if not bam.header.get('HD', {}).get('SO', 'Unknown') == 'coordinate':
-        raise RuntimeError(f'BAM file must be sorted by coordinate')
 
     for i, aln in enumerate(iter_bam(bam, paired_end=paired)):
         aln:Alignment
 
         if check_hits_region():
             n_reads += 1
-            n_bases += aln.a.query_length
-
-
+            n_bases += len(aln.metstr)
 
         if not i % 100_000:
             if i:
@@ -659,13 +657,13 @@ def process_bam(bamfn, regionsfn:str|Path,
         # deal with the table indicies
         read_i += 1
         position_i = position_i_next
-        position_j = position_i + aln.a.query_length
+        position_j = position_i + len(aln.metstr)
         position_i_next = position_j
 
         read_arrays['readID'][read_i] = readID
-        read_arrays['mapping_quality'][read_i] = aln.a.mapping_quality
-        read_arrays['start'][read_i] = aln.a.reference_start
-        read_arrays['end'][read_i] = aln.a.reference_end
+        read_arrays['mapping_quality'][read_i] = aln.mapping_quality()
+        read_arrays['start'][read_i] = aln.reference_start
+        read_arrays['end'][read_i] = aln.reference_end
         read_arrays['chrm'][read_i] = aln.a.reference_id
         read_arrays['is_forward'][read_i] = aln.a.is_forward
         if include_read_name:
