@@ -255,8 +255,8 @@ class Alignment:
             return get_bismark_met_str(a)
 
     @cached_property
-    def metstr(self) -> str:
-
+    def _a1_a2_overlaplen(self):
+        """Returns alignments in position order and length of the overlap"""
         if self.a2 is None:
             return self._get_met_str(self.a)
 
@@ -266,8 +266,15 @@ class Alignment:
         if a1.reference_start > a2.reference_start:
             a2, a1 = a1, a2
 
-        m1, m2 = [self._get_met_str(a) for a in (a1, a2)]
+
         overlap_length = a1.reference_end - a2.reference_start
+        return a1, a2, overlap_length
+
+    @cached_property
+    def metstr(self) -> str:
+        a1, a2, overlap_length = self._a1_a2_overlaplen
+        m1, m2 = [self._get_met_str(a) for a in (a1, a2)]
+
         # no overlap, just concat
         if overlap_length < 1:
             newm = m1 + m2
@@ -277,6 +284,20 @@ class Alignment:
         return newm
 
     @cached_property
+    def metstr(self) -> str:
+        a1, a2, overlap_length = self._a1_a2_overlaplen
+        m1, m2 = [self._get_met_str(a) for a in (a1, a2)]
+
+        # no overlap, just concat
+        if overlap_length < 1:
+            newm = m1 + m2
+        else:
+            # remove overlapping region from m1 and add m2
+            newm = m1[:-overlap_length] + m2
+        return newm
+
+
+    @cached_property
     def alignments(self) -> Tuple[AlignedSegment]:
         if self.a2 is None:
             alignments = (self.a,)
@@ -284,6 +305,29 @@ class Alignment:
             alignments = (self.a, self.a2)
         return alignments
 
+    @cached_property
+    def reference_start(self):
+        if self.a2 is None:
+            return self.a.reference_start
+        else:
+            return min(self.a.reference_start, self.a2.reference_start)
+
+    @cached_property
+    def reference_end(self):
+        if self.a2 is None:
+            return self.a.reference_end
+        else:
+            return max(self.a.reference_end, self.a2.reference_end)
+
+    def mapping_quality(self, keep_lowest=True):
+        if self.a2 is None:
+            return self.a.mapping_quality
+        else:
+            if keep_lowest:
+                minmax = min
+            else:
+                minmax = max
+            return minmax(self.a.mapping_quality, self.a2.mapping_quality)
 
     def _iter_locus_metstr_bismark(self, a: AlignedSegment) -> Tuple[int, bool]:
         """Iterate through the bismark methylation string, yielding
