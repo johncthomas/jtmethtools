@@ -420,7 +420,8 @@ def ttests(test_bam_fn, test_regions_fn, testoutdir,
     start = datetime.datetime.now()
     rd = process_bam(
         test_bam_fn,
-        test_regions_fn
+        test_regions_fn,
+        single_ended=True,
     )
     # time checkpoint
     next1 = datetime.datetime.now()
