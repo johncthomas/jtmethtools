@@ -442,8 +442,6 @@ def iter_bam(
         kind='bismark',
 ) -> Iterable[Alignment]:
     """Iterate over a bam file, yielding Alignments.
-
-    Use start_stop for splitting a bam file for, e.g. multiprocessing.
     """
     bam = _load_bam(bam)
     sorting_method = bam.header.get('HD', {}).get('SO', 'Unknown')
