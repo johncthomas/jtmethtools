@@ -29,7 +29,7 @@ def run_image_gen(
     rd = process_bam(
         bam,
         regions,
-
+        single_ended=single_eneded
     )
     next1 = datetime.datetime.now()
     logger.info('Time to process BAM:', start - next1)
@@ -126,7 +126,8 @@ def parse_args():
     run_parser.add_argument(
         '--single-ended',
         action='store_true',
-        help="Assume single-ended reads (removes requirement for BAM to be sorted in any way."
+        help="Assume single-ended reads (removes requirement for BAM to be sorted in any "
+             "particular way. May also improve performance on single ended files, but isn't required."
     )
     run_parser.add_argument(
         '--quiet',
