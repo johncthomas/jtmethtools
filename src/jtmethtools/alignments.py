@@ -257,8 +257,7 @@ class Alignment:
     @cached_property
     def _a1_a2_overlaplen(self):
         """Returns alignments in position order and length of the overlap"""
-        if self.a2 is None:
-            return self._get_met_str(self.a)
+
 
         a1, a2 = self.a, self.a2
 
@@ -272,19 +271,8 @@ class Alignment:
 
     @cached_property
     def metstr(self) -> str:
-        a1, a2, overlap_length = self._a1_a2_overlaplen
-        m1, m2 = [self._get_met_str(a) for a in (a1, a2)]
-
-        # no overlap, just concat
-        if overlap_length < 1:
-            newm = m1 + m2
-        else:
-            # remove overlapping region from m1 and add m2
-            newm = m1[:-overlap_length] + m2
-        return newm
-
-    @cached_property
-    def metstr(self) -> str:
+        if self.a2 is None:
+            return self._get_met_str(self.a)
         a1, a2, overlap_length = self._a1_a2_overlaplen
         m1, m2 = [self._get_met_str(a) for a in (a1, a2)]
 
