@@ -1,5 +1,5 @@
 import typing
-from typing import Collection, Tuple, Literal, Self
+from typing import Collection, Tuple, Literal, Self, Iterable
 from numpy.typing import NDArray
 
 import pandas as pd
@@ -363,21 +363,22 @@ class Alignment:
         regions = list(set([r for r in regions if r]))
         return regions
 
-
-def iter_bam_pe(
-        bam:str|AlignmentFile,
-) -> Tuple[AlignedSegment, AlignedSegment|None]:
-    """Iterate over a paired-end bam file, yielding pairs of alignments.
-    Where a read is unpaired, yield (alignment, None).
-
-    Use start_stop for splitting a bam file for, e.g. multiprocessing.
-    """
-
+def _load_bam(bam:str|Path|AlignmentFile):
     if not isinstance(bam, AlignmentFile):
         mode = 'rb'
         if str(bam).endswith('.sam'):
             mode = 'r'
         bam = pysam.AlignmentFile(bam, mode)
+    return bam
+
+def _iter_bam_pe_qname_sorted(
+        bam:str|Path|AlignmentFile,
+) -> Iterable[Tuple[AlignedSegment, AlignedSegment|None]]:
+    """Iterate over a paired-end bam file, yielding pairs of alignments.
+    Where a read is unpaired, yield (alignment, None).
+    """
+
+    bam = _load_bam(bam)
 
     if not bam.header.get('HD', {}).get('SO', 'Unknown') == 'queryname':
         raise RuntimeError(f'BAM file must be sorted by queryname')
@@ -401,18 +402,33 @@ def iter_bam_pe(
         yield aln_prev, None
 
 
-def iter_bam_se(
-        bam:str|AlignmentFile,
+def _iter_pe_bam_unsorted(
+        bam:AlignmentFile
+) -> Iterable[Tuple[AlignedSegment, AlignedSegment | None]]:
+    alignment_buffer = {}
+    for a in bam:
+        qn = a.query_name
+        if qn not in alignment_buffer:
+            alignment_buffer[qn] = a
+        else:
+            a1, a2 = a, alignment_buffer[qn]
+            del alignment_buffer[qn]
+            yield a1, a2
+    if alignment_buffer:
+        for a in alignment_buffer.values():
+            yield a, None
 
-) -> Tuple[AlignedSegment, AlignedSegment|None]:
+
+def _iter_bam_se(
+        bam:str|Path|AlignmentFile,
+) -> Iterable[AlignedSegment]:
     """Iterate over a single-ended bam file, yielding pairs of alignments.
     Where a read is unpaired, yield (alignment, None).
 
     Use start_stop for splitting a bam file for, e.g. multiprocessing.
     """
 
-    if not isinstance(bam, AlignmentFile):
-        bam = pysam.AlignmentFile(bam, 'rb')
+    bam = _load_bam(bam)
 
     for i, aln in enumerate(bam):
         logger.debug(f'Alignment #{i}')
@@ -420,36 +436,34 @@ def iter_bam_se(
         yield aln
 
 
-
 def iter_bam(
-        bam:str|AlignmentFile,
+        bam:str|Path|AlignmentFile,
         paired_end:bool=True,
         kind='bismark',
-) -> typing.Iterable[Alignment]:
+) -> Iterable[Alignment]:
     """Iterate over a bam file, yielding Alignments.
 
     Use start_stop for splitting a bam file for, e.g. multiprocessing.
     """
+    bam = _load_bam(bam)
+    sorting_method = bam.header.get('HD', {}).get('SO', 'Unknown')
+
     if paired_end:
-        bam = iter_bam_pe(bam, )
-        for aln in bam:
+        if sorting_method == 'queryname':
+            bamiter = _iter_bam_pe_qname_sorted(bam )
+        else:
+            logger.info(
+                "Paired end bam not sorted by queryname - this might take a little longer and use more memory.\n"
+                "If it's actually single-ended it'll take a lot more memory. Use the --single-ended option to avoid this.\n"
+                f"If it's paired end and sorted by query name it shouldn't be too bad... ({sorting_method:})"
+            )
+            bamiter = _iter_pe_bam_unsorted(bam)
+        for aln in bamiter:
             yield Alignment(*aln, kind=kind)
     else:
-        bam = iter_bam_se(bam, )
-        for aln in bam:
+        bamiter = _iter_bam_se(bam, )
+        for aln in bamiter:
             yield Alignment(aln, kind=kind)
     return None
 
 
-def _test():
-    bamfn = '/home/jcthomas/data/canary/sorted_qname/CMDL19003169_1_val_1_bismark_bt2_pe.deduplicated.bam'
-
-    for alignment in iter_bam(bamfn, (0, 6), paired_end=False):
-        meth_by_locus = alignment.locus_methylation
-        print(alignment.a.query_name)
-        print(alignment.metstr)
-        print(meth_by_locus.values())
-
-if __name__ == '__main__':
-    logger.remove()
-    _test()
