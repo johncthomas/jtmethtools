@@ -34,6 +34,15 @@ class ImageMaker:
     All methods for image layers start with "layer_*". Other useful
     methods will probably start with "get_*" or "plot_*".
     """
+
+    # IMPLIMENTATION NOTE 1: when adding new layer methods, should start with
+    #   layer_*, no other methods should start with this. Layer methods
+    #   should create an array with self._protoimage, and pass through
+    #   self._finish_image before returning. Don't fill NaNs in the array.
+    # NOTE 2: a "padding" row is added, this is a hack to make the final image the
+    #   right width. It gets set to np.nan by _protoimage, but it's existance
+    #   might have to be taken into account (for example n_rows is +1 in _protoimage)
+
     # __slots__ = ['window', 'positions', 'unique_positions',
     #              'unique_rowids', 'position_indices', 'row_indices',
     #              '_readid_image', 'width', 'rows',
@@ -81,19 +90,18 @@ class ImageMaker:
         logger.trace(pos)
         logger.trace(rids)
 
-        rows += 1 # the ones we expect plus the padder
         self.n_alignments = len(np.unique(rids))
         rids = np.concatenate([
             rids,
             np.ones(shape=(width,), dtype=rids.dtype) * PAD_READID
         ])
 
-
+        # add padding row.
         pos = np.concatenate([
             pos, np.arange(start, end, dtype=pos.dtype)
         ])
 
-        self.rows = rows
+        self.n_rows = rows
 
         # These values used by ._protoimage()
         unique_positions, position_indices = np.unique(pos, return_inverse=True)
@@ -121,15 +129,19 @@ class ImageMaker:
         ])
 
         # Initialize the output array with NaN values
-        # (note: nans removed by _finish_image, if they're filled in
+        # (note: nans filled by _finish_image, if they're filled in
         #  before then it'll mess up the sorting).
         output_array = np.full(
-            (self.rows, len(self.unique_positions)),
+            (self.n_rows + 1, len(self.unique_positions)),
             np.nan
         )
 
         # Populate the output array directly using the indices
         output_array[self.row_indices, self.position_indices] = states
+
+        # Set the padder row to null, it'll get sorted to the bottom of
+        #   the image and removed by _finish_image
+        output_array[max(self.row_indices), :] = np.nan
 
         return output_array.astype(PIXEL_DTYPE)
 
@@ -147,7 +159,6 @@ class ImageMaker:
         or fillval, sort the reads by starting position, &
         remove bottom row (which is only there to pad the width).
         """
-        image = image[:-1]
 
         # sort by position of the first non-nan value
         notnan = np.invert(np.isnan(image))
@@ -158,6 +169,9 @@ class ImageMaker:
         )
 
         image = image[np.argsort(first_true)]
+
+        # the padding row should be at the bottom.
+        image = image[:-1]
 
         image[np.isnan(image)] = fillval
         return image
@@ -176,6 +190,7 @@ class ImageMaker:
         image[image==0.] = self.null_grey
 
         return self._finish_image(image)
+
 
     def layer_methylated_other(self) -> PixelArray:
         """1 where non-cpg methylated, null_grey otherwise"""
@@ -278,39 +293,6 @@ class ImageMaker:
             images[meth[6:]] = img
         return images
 
-
-    # def plot_images(self, image_types:Collection[str]):
-    #     import matplotlib.pyplot as plt
-    #
-    #     layers: dict[str, NDArray] = self.get_images(
-    #         image_types
-    #     )
-    #
-    #     n = len(layers)
-    #     fig, axes = plt.subplots(1, n, figsize=(8*n, 1.6*3) )
-    #     if isinstance(axes, plt.Axes):
-    #         axes = [axes]
-    #     logger.debug(axes)
-    #     for axi, (k, img) in enumerate(layers.items()):
-    #         plot_layer(img, ax=axes[axi])
-    #         axes[axi].set_title(k)
-    #     return fig, axes
-    #
-    # def _plot_test_images(self):
-    #     import matplotlib.pyplot as plt
-    #     layers:dict[str, NDArray] = self.get_images(
-    #         ('bases', 'methylated_cpg', 'methylated_other', 'methylated_any',
-    #          'bases_met_as_fifth', 'strand', 'mapping_quality', 'phred',
-    #          )
-    #     )
-    #     n = len(layers)
-    #     fig, axes = plt.subplots(1, n, figsize=(9*n, 1.8*3) )
-    #     logger.debug(axes)
-    #     for axi, (i, img) in enumerate(layers.items()):
-    #
-    #         plot_layer(img, ax=axes[axi])
-    #         axes[axi].set_title(i)
-    #     return fig, axes
 
     @staticmethod
     def available_layers() -> list[str]:
@@ -447,7 +429,7 @@ def ttests(test_bam_fn, test_regions_fn, testoutdir,
         layers=('bases', 'methylated_other', 'phred', 'mapping_quality', 'methylated_cpg'),
         rows=50,
         max_other_met=10,
-        min_mapq=0
+        min_mapq=0,
     ):
         a: dict[str, PixelArray]
         l: LociRange
@@ -468,14 +450,10 @@ def ttests(test_bam_fn, test_regions_fn, testoutdir,
     next5 = datetime.datetime.now()
     print('Time to generate all images: ', next5 - next4)
 
-    # img = ImageMaker(window)
-    # #print(img.methylated_cpg())
-    # print(img.methylated_cpg().shape)
-    # import matplotlib.pyplot as plt
-    # fig, axes = img._plot_test_images()
-    # #imgd = img.get_images([])
-    #
-    # plt.savefig('/home/jcthomas/DevLab/NIMBUS/Figures/test_images.1.png')
+
+
+
+
 
 if __name__ == '__main__':
     logger.remove()
