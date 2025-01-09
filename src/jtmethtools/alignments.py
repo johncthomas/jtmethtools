@@ -376,7 +376,10 @@ def iter_bam_pe(
     """
 
     if not isinstance(bam, AlignmentFile):
-        bam = pysam.AlignmentFile(bam, 'rb')
+        mode = 'rb'
+        if str(bam).endswith('.sam'):
+            mode = 'r'
+        bam = pysam.AlignmentFile(bam, mode)
 
     if not bam.header.get('HD', {}).get('SO', 'Unknown') == 'queryname':
         raise RuntimeError(f'BAM file must be sorted by queryname')
