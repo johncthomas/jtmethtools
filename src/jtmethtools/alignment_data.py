@@ -599,7 +599,6 @@ def process_bam(bamfn, regionsfn:str|Path,
         else:
             return True
 
-
     chrm_map = {}
     for i, c in enumerate(regions.chromsomes):
         chrm_map[i] = c
@@ -734,8 +733,6 @@ def sampledown_rows(arr:NDArray, max_rows:int) -> NDArray:
         )
     )
     return arr[rowi]
-
-
 
 
 # TESTDIR = Path('/home/jcthomas/python/jtmethtools/src/jtmethtools/tests/')
