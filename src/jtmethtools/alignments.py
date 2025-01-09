@@ -364,10 +364,8 @@ class Alignment:
         return regions
 
 
-
 def iter_bam_pe(
         bam:str|AlignmentFile,
-        start_stop:Tuple[int, int]=(0, np.inf)
 ) -> Tuple[AlignedSegment, AlignedSegment|None]:
     """Iterate over a paired-end bam file, yielding pairs of alignments.
     Where a read is unpaired, yield (alignment, None).
@@ -387,12 +385,9 @@ def iter_bam_pe(
     aln_prev: pysam.AlignedSegment | None = None
     for i, aln_current in enumerate(bam):
         logger.debug(f'Alignment #{i}')
-        if i < start_stop[0]:
-            continue
-        elif i >= start_stop[1]:
-            return None
 
-        elif aln_prev is None:
+
+        if aln_prev is None:
             aln_prev = aln_current
             continue
         elif aln_current.query_name == aln_prev.query_name:
@@ -408,7 +403,7 @@ def iter_bam_pe(
 
 def iter_bam_se(
         bam:str|AlignmentFile,
-        start_stop:Tuple[int, int]=(0, np.inf)
+
 ) -> Tuple[AlignedSegment, AlignedSegment|None]:
     """Iterate over a single-ended bam file, yielding pairs of alignments.
     Where a read is unpaired, yield (alignment, None).
@@ -421,10 +416,6 @@ def iter_bam_se(
 
     for i, aln in enumerate(bam):
         logger.debug(f'Alignment #{i}')
-        if i < start_stop[0]:
-            continue
-        elif i >= start_stop[1]:
-            return None
 
         yield aln
 
@@ -432,7 +423,6 @@ def iter_bam_se(
 
 def iter_bam(
         bam:str|AlignmentFile,
-        start_stop:Tuple[int, int]=(0, np.inf),
         paired_end:bool=True,
         kind='bismark',
 ) -> typing.Iterable[Alignment]:
@@ -441,11 +431,11 @@ def iter_bam(
     Use start_stop for splitting a bam file for, e.g. multiprocessing.
     """
     if paired_end:
-        bam = iter_bam_pe(bam, start_stop)
+        bam = iter_bam_pe(bam, )
         for aln in bam:
             yield Alignment(*aln, kind=kind)
     else:
-        bam = iter_bam_se(bam, start_stop)
+        bam = iter_bam_se(bam, )
         for aln in bam:
             yield Alignment(aln, kind=kind)
     return None
