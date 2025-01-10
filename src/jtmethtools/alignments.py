@@ -8,7 +8,7 @@ import pysam
 from loguru import logger
 from pysam import AlignedSegment, AlignmentFile, AlignmentHeader
 from attrs import define, field
-from functools import cached_property
+from functools import cached_property, lru_cache
 
 logger.remove()
 
@@ -125,9 +125,12 @@ def alignment_overlaps_region(
 
 
 def get_bismark_met_str(a: AlignedSegment) -> str:
+    # this works in every case I've seen...
     tag, met = a.get_tags()[2]
     try:
         assert tag == 'XM'
+    # but it's not guaranteed that the tag position will never change
+    #   so this should work whever it is.
     except AssertionError:
         tags = a.get_tags()
         for t, m in tags:
@@ -212,6 +215,7 @@ def get_alignment_of_read(readname:str, bamfn:str) -> (AlignedSegment, AlignedSe
         return tuple(aligns)
 
 
+@lru_cache(1024)
 def get_ref_position(seq_i, ref_start, cigar):
     """Get the reference locus, taking insertions/deletions into account"""
     ref_pos = ref_start
@@ -268,6 +272,82 @@ class Alignment:
 
         overlap_length = a1.reference_end - a2.reference_start
         return a1, a2, overlap_length
+
+    def get_locus_values(aln, use_quality_profile=True):
+        if use_quality_profile:
+            from jtmethtools.quality_profiles import quality_profile_match_41, quality_profile_mismatch_41
+        else:
+            quality_profile_match_41, quality_profile_mismatch_41 = None, None
+
+        a1_loc_pos, a2_loc_pos = [
+            {r: q for (q, r) in ap if (q is not None) and (r is not None)}
+            for ap in (aln.a.aligned_pairs, aln.a2.aligned_pairs)
+        ]
+
+        a1_loc = set(a1_loc_pos.keys())
+        a2_loc = set(a2_loc_pos.keys())
+        shared_loc = a1_loc.intersection(a2_loc)
+        a1_only = a1_loc.difference(a2_loc)
+        a2_only = a2_loc.difference(a1_loc)
+
+        phreds = {}
+        nucleotides = {}
+        methylations = {}
+
+        a1_metstr = get_bismark_met_str(aln.a)
+        a2_metstr = get_bismark_met_str(aln.a2)
+
+        # get the values where the position only exists in one of the mates
+        for only_loc, loc_pos, a, metstr in (
+                (a1_only, a1_loc_pos, aln.a, a1_metstr),
+                (a2_only, a2_loc_pos, aln.a2, a2_metstr)
+        ):
+            for l in only_loc:
+                p = loc_pos[l]
+                phreds[l] = a.query_qualities[p]
+                nucleotides[l] = a.query[p]
+                methylations[l] = metstr[p]
+
+        for l in shared_loc:
+            a1_pos = a1_loc_pos[l]
+            a2_pos = a2_loc_pos[l]
+
+            a1_nt = aln.a.query[a1_pos]
+            a2_nt = aln.a2.query[a2_pos]
+
+            a1_phred = aln.a.query_qualities[a1_pos]
+            a2_phred = aln.a2.query_qualities[a2_pos]
+
+            a1_met = a1_metstr[a1_pos]
+            a2_met = a2_metstr[a2_pos]
+
+            # (in the case that a1 and a2 have different nucleotides and
+            #   the phred is the same, we'll keep the a1 NT.)
+            if a1_phred >= a2_phred:
+                nt = a1_nt
+                met = a1_met
+            else:
+                nt = a2_nt
+                met = a2_met
+
+            if use_quality_profile:
+                if a1_nt == a2_nt:
+                    phred = quality_profile_match_41[a1_phred][a2_phred]
+                else:
+                    phred = quality_profile_mismatch_41[a1_phred][a2_phred]
+            else:
+                phred = max((a1_phred, a2_phred))
+
+            phreds[l] = phred
+            nucleotides[l] = nt
+            methylations[l] = met
+
+        return {'phreds': phreds, 'nucleotides': nucleotides, 'methylations': methylations}
+
+    def merge(self) -> Self:
+        if self.a2 is None:
+            return self
+
 
     @cached_property
     def metstr(self) -> str:

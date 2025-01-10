@@ -4,7 +4,8 @@ import jtmethtools.images
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-
+from dataclasses import dataclass
+from typing import Tuple
 from pyarrow import compute
 
 from jtmethtools.util import (
@@ -18,7 +19,7 @@ import tempfile
 
 from jtmethtools import alignment_data
 
-from jtmethtools.alignments import iter_bam
+from jtmethtools.alignments import *
 
 logger.remove()
 #set_logger('TRACE',)
@@ -180,8 +181,51 @@ def test_filter_read_data():
     check_filtering(filt_meth, 'unmethRev', 'methRev')
 
 
+def test_merge_paired_alignment_values():
+    @dataclass
+    class A:
+        metstr: str
+        query: str
+        query_qualities: list[int]
+        aligned_pairs: list[Tuple[int, int]]
+
+        def get_tags(self):
+            return [None, None, ('XM', self.metstr)]
 
 
+    testa1 = A(
+        metstr="ACDE",
+        query='acde',
+        query_qualities=[40, 40, 10, 40],
+        aligned_pairs=[
+            (0, 10),
+            (None, 11),
+            (1, 12),
+            (2, 13),
+            (3, None)
+        ]
+    )
+
+    testa2 = A(
+        metstr="FGHI",
+        query='fghi',
+        query_qualities=[10, 40, 40, 40],
+        aligned_pairs=[
+            (0, 12),
+            (1, 13),
+            (2, 14),
+            (3, 15)
+        ]
+    )
+    testaln = Alignment(
+        a=testa1,
+        a2=testa2
+    )
+
+    res = testaln.get_locus_values(use_quality_profile=True)
+    assert  res == {'phreds': {10: 40, 14: 40, 15: 40, 12: 37, 13: 34},
+                    'nucleotides': {10: 'a', 14: 'h', 15: 'i', 12: 'c', 13: 'g'},
+                    'methylations': {10: 'A', 14: 'H', 15: 'I', 12: 'C', 13: 'G'}}
 
 
 
