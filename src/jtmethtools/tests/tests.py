@@ -219,10 +219,11 @@ def test_merge_paired_alignment_values():
     )
     testaln = Alignment(
         a=testa1,
-        a2=testa2
+        a2=testa2,
+        use_quality_profile=True,
     )
 
-    res = testaln.get_locus_values(use_quality_profile=True)
+    res = testaln.get_locus_values()
     assert  res == {'phreds': {10: 40, 14: 40, 15: 40, 12: 37, 13: 34},
                     'nucleotides': {10: 'a', 14: 'h', 15: 'i', 12: 'c', 13: 'g'},
                     'methylations': {10: 'A', 14: 'H', 15: 'I', 12: 'C', 13: 'G'}}

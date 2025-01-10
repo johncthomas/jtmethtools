@@ -253,6 +253,8 @@ class Alignment:
     a2: AlignedSegment | None = None
     kind: Literal['bismark'] = 'bismark'
     filename: str = ''
+    phred_offset: int = -33
+    use_quality_profile:bool = True
 
     def _get_met_str(self, a:AlignedSegment):
         if self.kind == 'bismark':
@@ -273,15 +275,24 @@ class Alignment:
         overlap_length = a1.reference_end - a2.reference_start
         return a1, a2, overlap_length
 
-    def get_locus_values(aln, use_quality_profile=True):
-        if use_quality_profile:
+    def get_locus_values(self, ) \
+            -> dict[str, dict[int, str|int]]:
+        """Get dictionary of "phreds", "nucleotides", and "methylations"
+        mapping each reference locus to the value.
+
+        Insertions and deletions are ignored.
+
+        If Alignment.use_quality_profile is True, it'll recalculate the PHRED
+        scores using table from NGmerge: https://github.com/harvardinformatics/NGmerge
+        """
+        if self.use_quality_profile:
             from jtmethtools.quality_profiles import quality_profile_match_41, quality_profile_mismatch_41
         else:
             quality_profile_match_41, quality_profile_mismatch_41 = None, None
 
         a1_loc_pos, a2_loc_pos = [
             {r: q for (q, r) in ap if (q is not None) and (r is not None)}
-            for ap in (aln.a.aligned_pairs, aln.a2.aligned_pairs)
+            for ap in (self.a.aligned_pairs, self.a2.aligned_pairs)
         ]
 
         a1_loc = set(a1_loc_pos.keys())
@@ -294,13 +305,13 @@ class Alignment:
         nucleotides = {}
         methylations = {}
 
-        a1_metstr = get_bismark_met_str(aln.a)
-        a2_metstr = get_bismark_met_str(aln.a2)
+        a1_metstr = get_bismark_met_str(self.a)
+        a2_metstr = get_bismark_met_str(self.a2)
 
         # get the values where the position only exists in one of the mates
         for only_loc, loc_pos, a, metstr in (
-                (a1_only, a1_loc_pos, aln.a, a1_metstr),
-                (a2_only, a2_loc_pos, aln.a2, a2_metstr)
+                (a1_only, a1_loc_pos, self.a, a1_metstr),
+                (a2_only, a2_loc_pos, self.a2, a2_metstr)
         ):
             for l in only_loc:
                 p = loc_pos[l]
@@ -312,11 +323,11 @@ class Alignment:
             a1_pos = a1_loc_pos[l]
             a2_pos = a2_loc_pos[l]
 
-            a1_nt = aln.a.query[a1_pos]
-            a2_nt = aln.a2.query[a2_pos]
+            a1_nt = self.a.query[a1_pos]
+            a2_nt = self.a2.query[a2_pos]
 
-            a1_phred = aln.a.query_qualities[a1_pos]
-            a2_phred = aln.a2.query_qualities[a2_pos]
+            a1_phred = self.a.query_qualities[a1_pos]
+            a2_phred = self.a2.query_qualities[a2_pos]
 
             a1_met = a1_metstr[a1_pos]
             a2_met = a2_metstr[a2_pos]
@@ -330,7 +341,7 @@ class Alignment:
                 nt = a2_nt
                 met = a2_met
 
-            if use_quality_profile:
+            if self.use_quality_profile:
                 if a1_nt == a2_nt:
                     phred = quality_profile_match_41[a1_phred][a2_phred]
                 else:
@@ -412,17 +423,17 @@ class Alignment:
                 locus += 1
                 yield locus, m == 'Z'
 
-    @cached_property
-    def locus_methylation(self) -> dict[str, bool]:
-        """Dict of locus->True|False indicating a methylated CpG.
-
-        If alignment is a paired end, overlapping loci are merged."""
-        a1, a2 = self.a, self.a2
-        d1 = {k: l for k, l in self._iter_locus_metstr_bismark(a1)}
-        if a2 is None:
-            return d1
-        d2 = {k: l for k, l in self._iter_locus_metstr_bismark(a2)}
-        return d1 | d2
+    # @cached_property
+    # def locus_methylation(self) -> dict[str, bool]:
+    #     """Dict of locus->True|False indicating a methylated CpG.
+    #
+    #     If alignment is a paired end, overlapping loci are merged."""
+    #     a1, a2 = self.a, self.a2
+    #     d1 = {k: l for k, l in self._iter_locus_metstr_bismark(a1)}
+    #     if a2 is None:
+    #         return d1
+    #     d2 = {k: l for k, l in self._iter_locus_metstr_bismark(a2)}
+    #     return d1 | d2
 
     def no_non_cpg(self) -> bool:
         """look for forbidden methylation states.
