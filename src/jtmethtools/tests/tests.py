@@ -185,17 +185,16 @@ def test_merge_paired_alignment_values():
     @dataclass
     class A:
         metstr: str
-        query: str
+        query_sequence: str
         query_qualities: list[int]
         aligned_pairs: list[Tuple[int, int]]
 
         def get_tags(self):
             return [None, None, ('XM', self.metstr)]
 
-
     testa1 = A(
         metstr="ACDE",
-        query='acde',
+        query_sequence='acde',
         query_qualities=[40, 40, 10, 40],
         aligned_pairs=[
             (0, 10),
@@ -208,7 +207,7 @@ def test_merge_paired_alignment_values():
 
     testa2 = A(
         metstr="FGHI",
-        query='fghi',
+        query_sequence='fghi',
         query_qualities=[10, 40, 40, 40],
         aligned_pairs=[
             (0, 12),
@@ -217,6 +216,7 @@ def test_merge_paired_alignment_values():
             (3, 15)
         ]
     )
+
     testaln = Alignment(
         a=testa1,
         a2=testa2,
@@ -224,9 +224,23 @@ def test_merge_paired_alignment_values():
     )
 
     res = testaln.get_locus_values()
-    assert  res == {'phreds': {10: 40, 14: 40, 15: 40, 12: 37, 13: 34},
+    expected = {'phreds': {10: 40, 14: 40, 15: 40, 12: 37, 13: 34},
                     'nucleotides': {10: 'a', 14: 'h', 15: 'i', 12: 'c', 13: 'g'},
                     'methylations': {10: 'A', 14: 'H', 15: 'I', 12: 'C', 13: 'G'}}
+    assert  res == expected
+
+    # check with order reversed, and highest quality
+    testaln = Alignment(
+        a=testa2,
+        a2=testa1,
+        use_quality_profile=False,
+    )
+
+    expected['phreds'][12] = 40
+    expected['phreds'][13] = 40
+
+    res2 = testaln.get_locus_values()
+    assert res2 == expected
 
 
 

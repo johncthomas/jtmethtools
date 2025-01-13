@@ -316,15 +316,15 @@ class Alignment:
             for l in only_loc:
                 p = loc_pos[l]
                 phreds[l] = a.query_qualities[p]
-                nucleotides[l] = a.query[p]
+                nucleotides[l] = a.query_sequence[p]
                 methylations[l] = metstr[p]
 
         for l in shared_loc:
             a1_pos = a1_loc_pos[l]
             a2_pos = a2_loc_pos[l]
 
-            a1_nt = self.a.query[a1_pos]
-            a2_nt = self.a2.query[a2_pos]
+            a1_nt = self.a.query_sequence[a1_pos]
+            a2_nt = self.a2.query_sequence[a2_pos]
 
             a1_phred = self.a.query_qualities[a1_pos]
             a2_phred = self.a2.query_qualities[a2_pos]
@@ -333,7 +333,7 @@ class Alignment:
             a2_met = a2_metstr[a2_pos]
 
             # (in the case that a1 and a2 have different nucleotides and
-            #   the phred is the same, we'll keep the a1 NT.)
+            #   the phred is the same, we'll keep the a1 NT)
             if a1_phred >= a2_phred:
                 nt = a1_nt
                 met = a1_met
