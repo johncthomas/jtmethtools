@@ -9,7 +9,7 @@ from loguru import logger
 from pysam import AlignedSegment, AlignmentFile, AlignmentHeader
 from attrs import define, field
 from functools import cached_property, lru_cache
-
+from collections import namedtuple
 logger.remove()
 
 SplitTable = dict[str, pd.DataFrame]
@@ -247,6 +247,12 @@ def get_ref_position(seq_i, ref_start, cigar):
     return None  # position not reached, or it's past the alignment
 
 
+@define
+class LocusValues:
+    methylations:dict[int, str]
+    qualities:dict[int, int]
+    nucleotides:dict[int, str]
+
 @define(frozen=True)
 class Alignment:
     a: AlignedSegment
@@ -254,7 +260,7 @@ class Alignment:
     kind: Literal['bismark'] = 'bismark'
     filename: str = ''
     phred_offset: int = -33
-    use_quality_profile:bool = True
+    use_quality_profile:bool = False
 
     def _get_met_str(self, a:AlignedSegment):
         if self.kind == 'bismark':
@@ -275,108 +281,120 @@ class Alignment:
         overlap_length = a1.reference_end - a2.reference_start
         return a1, a2, overlap_length
 
-    def get_locus_values(self, ) \
-            -> dict[str, dict[int, str|int]]:
-        """Get dictionary of "phreds", "nucleotides", and "methylations"
-        mapping each reference locus to the value.
+
+    @cached_property
+    def locus_values(self, ) \
+            -> LocusValues:
+        """Get object with attributes "qualities", "nucleotides", and "methylations"
+        mapping each reference locus to the value, reference_locus -> value.
 
         Insertions and deletions are ignored.
 
-        If Alignment.use_quality_profile is True, it'll recalculate the PHRED
-        scores using table from NGmerge: https://github.com/harvardinformatics/NGmerge
+        If Alignment.use_quality_profile is True (and the reads are paired),
+        it'll recalculate the PHRED scores using table from NGmerge:
+            https://github.com/harvardinformatics/NGmerge
         """
-        if self.use_quality_profile:
-            from jtmethtools.quality_profiles import quality_profile_match_41, quality_profile_mismatch_41
+
+        if self.a2 is None:
+            phreds, methylations, nucleotides = {}, {}, {}
+            for r_pos, l_pos in self.a.get_aligned_pairs(matches_only=True):
+                phreds[l_pos] = self.a.query_qualities[r_pos]
+                nucleotides[l_pos] = self.a.query_sequence[r_pos]
+                methylations[l_pos] = self._get_met_str(self.a)[r_pos]
         else:
-            quality_profile_match_41, quality_profile_mismatch_41 = None, None
-
-        a1_loc_pos, a2_loc_pos = [
-            {r: q for (q, r) in ap if (q is not None) and (r is not None)}
-            for ap in (self.a.aligned_pairs, self.a2.aligned_pairs)
-        ]
-
-        a1_loc = set(a1_loc_pos.keys())
-        a2_loc = set(a2_loc_pos.keys())
-        shared_loc = a1_loc.intersection(a2_loc)
-        a1_only = a1_loc.difference(a2_loc)
-        a2_only = a2_loc.difference(a1_loc)
-
-        phreds = {}
-        nucleotides = {}
-        methylations = {}
-
-        a1_metstr = get_bismark_met_str(self.a)
-        a2_metstr = get_bismark_met_str(self.a2)
-
-        # get the values where the position only exists in one of the mates
-        for only_loc, loc_pos, a, metstr in (
-                (a1_only, a1_loc_pos, self.a, a1_metstr),
-                (a2_only, a2_loc_pos, self.a2, a2_metstr)
-        ):
-            for l in only_loc:
-                p = loc_pos[l]
-                phreds[l] = a.query_qualities[p]
-                nucleotides[l] = a.query_sequence[p]
-                methylations[l] = metstr[p]
-
-        for l in shared_loc:
-            a1_pos = a1_loc_pos[l]
-            a2_pos = a2_loc_pos[l]
-
-            a1_nt = self.a.query_sequence[a1_pos]
-            a2_nt = self.a2.query_sequence[a2_pos]
-
-            a1_phred = self.a.query_qualities[a1_pos]
-            a2_phred = self.a2.query_qualities[a2_pos]
-
-            a1_met = a1_metstr[a1_pos]
-            a2_met = a2_metstr[a2_pos]
-
-            # (in the case that a1 and a2 have different nucleotides and
-            #   the phred is the same, we'll keep the a1 NT)
-            if a1_phred >= a2_phred:
-                nt = a1_nt
-                met = a1_met
-            else:
-                nt = a2_nt
-                met = a2_met
 
             if self.use_quality_profile:
-                if a1_nt == a2_nt:
-                    phred = quality_profile_match_41[a1_phred][a2_phred]
-                else:
-                    phred = quality_profile_mismatch_41[a1_phred][a2_phred]
+                from jtmethtools.quality_profiles import quality_profile_match_41, quality_profile_mismatch_41
             else:
-                phred = max((a1_phred, a2_phred))
+                quality_profile_match_41, quality_profile_mismatch_41 = None, None
 
-            phreds[l] = phred
-            nucleotides[l] = nt
-            methylations[l] = met
+            a1_loc_pos, a2_loc_pos = [
+                {r: q for (q, r) in ap if (q is not None) and (r is not None)}
+                for ap in (self.a.aligned_pairs, self.a2.aligned_pairs)
+            ]
 
-        return {'phreds': phreds, 'nucleotides': nucleotides, 'methylations': methylations}
+            a1_loc = set(a1_loc_pos.keys())
+            a2_loc = set(a2_loc_pos.keys())
+            shared_loc = a1_loc.intersection(a2_loc)
+            a1_only = a1_loc.difference(a2_loc)
+            a2_only = a2_loc.difference(a1_loc)
+
+            phreds = {}
+            nucleotides = {}
+            methylations = {}
+
+            a1_metstr = get_bismark_met_str(self.a)
+            a2_metstr = get_bismark_met_str(self.a2)
+
+            # get the values where the position only exists in one of the mates
+            for only_loc, loc_pos, a, metstr in (
+                    (a1_only, a1_loc_pos, self.a, a1_metstr),
+                    (a2_only, a2_loc_pos, self.a2, a2_metstr)
+            ):
+                for l in only_loc:
+                    p = loc_pos[l]
+                    phreds[l] = a.query_qualities[p]
+                    nucleotides[l] = a.query_sequence[p]
+                    methylations[l] = metstr[p]
+
+            for l in shared_loc:
+                a1_pos = a1_loc_pos[l]
+                a2_pos = a2_loc_pos[l]
+
+                a1_nt = self.a.query_sequence[a1_pos]
+                a2_nt = self.a2.query_sequence[a2_pos]
+
+                a1_phred = self.a.query_qualities[a1_pos]
+                a2_phred = self.a2.query_qualities[a2_pos]
+
+                a1_met = a1_metstr[a1_pos]
+                a2_met = a2_metstr[a2_pos]
+
+                # (in the case that a1 and a2 have different nucleotides and
+                #   the phred is the same, we'll keep the a1 NT)
+                if a1_phred >= a2_phred:
+                    nt = a1_nt
+                    met = a1_met
+                else:
+                    nt = a2_nt
+                    met = a2_met
+
+                if self.use_quality_profile:
+                    if a1_nt == a2_nt:
+                        phred = quality_profile_match_41[a1_phred][a2_phred]
+                    else:
+                        phred = quality_profile_mismatch_41[a1_phred][a2_phred]
+                else:
+                    phred = max((a1_phred, a2_phred))
+
+                phreds[l] = phred
+                nucleotides[l] = nt
+                methylations[l] = met
+
+        return LocusValues(qualities=phreds, nucleotides=nucleotides, methylations=methylations)
 
     def merge(self) -> Self:
         if self.a2 is None:
             return self
 
+    @property
+    def locus_methylation(self) -> dict[int, str]:
+        return self.locus_values.methylations
 
-    @cached_property
+    @property
     def metstr(self) -> str:
-        if self.a2 is None:
-            return self._get_met_str(self.a)
-        a1, a2, overlap_length = self._a1_a2_overlaplen
-        m1, m2 = [self._get_met_str(a) for a in (a1, a2)]
+        return ''.join(self.locus_methylation.values())
 
-        # no overlap, just concat
-        if overlap_length < 1:
-            newm = m1 + m2
-        else:
-            # remove overlapping region from m1 and add m2
-            newm = m1[:-overlap_length] + m2
-        return newm
+    @property
+    def locus_quality(self) -> dict[int, int]:
+        return self.locus_values.qualities
+
+    @property
+    def locus_nucleotide(self) -> dict[int, str]:
+        return self.locus_values.nucleotides
 
 
-    @cached_property
+    @property
     def alignments(self) -> Tuple[AlignedSegment]:
         if self.a2 is None:
             alignments = (self.a,)
@@ -384,14 +402,18 @@ class Alignment:
             alignments = (self.a, self.a2)
         return alignments
 
-    @cached_property
+    @property
+    def reference_name(self) -> str:
+        return self.a.reference_name
+
+    @property
     def reference_start(self):
         if self.a2 is None:
             return self.a.reference_start
         else:
             return min(self.a.reference_start, self.a2.reference_start)
 
-    @cached_property
+    @property
     def reference_end(self):
         if self.a2 is None:
             return self.a.reference_end
@@ -422,18 +444,6 @@ class Alignment:
                     continue
                 locus += 1
                 yield locus, m == 'Z'
-
-    # @cached_property
-    # def locus_methylation(self) -> dict[str, bool]:
-    #     """Dict of locus->True|False indicating a methylated CpG.
-    #
-    #     If alignment is a paired end, overlapping loci are merged."""
-    #     a1, a2 = self.a, self.a2
-    #     d1 = {k: l for k, l in self._iter_locus_metstr_bismark(a1)}
-    #     if a2 is None:
-    #         return d1
-    #     d2 = {k: l for k, l in self._iter_locus_metstr_bismark(a2)}
-    #     return d1 | d2
 
     def no_non_cpg(self) -> bool:
         """look for forbidden methylation states.
@@ -544,7 +554,7 @@ def iter_bam(
             logger.info(
                 "Paired end bam not sorted by queryname - this might take a little longer and use more memory.\n"
                 "If it's actually single-ended it'll take a lot more memory. Use the --single-ended option to avoid this.\n"
-                f"If it's paired end and sorted by query name it shouldn't be too bad... ({sorting_method:})"
+                f"If it's paired end and sorted by coordinate it shouldn't be too bad... ({sorting_method=})"
             )
             bamiter = _iter_pe_bam_unsorted(bam)
         for aln in bamiter:
@@ -554,5 +564,6 @@ def iter_bam(
         for aln in bamiter:
             yield Alignment(aln, kind=kind)
     return None
+
 
 

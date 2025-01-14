@@ -5,7 +5,8 @@ import os
 from pathlib import Path
 from typing import (
     Self,
-    Iterator
+    Iterator,
+    Iterable
 )
 
 from functools import lru_cache
@@ -51,7 +52,7 @@ NT_CODES = _ntcodes | {v:k for k, v in _ntcodes.items()}
 _bsmk_codes = dict(zip('.ZHXU', np.array([0, 1, 2, 3, 4], dtype=np.uint8)))
 BISMARK_CODES = _bsmk_codes | {v:k for k, v in _bsmk_codes.items()}
 
-def _encode_string(string:str, codes:dict) -> NDArray[np.uint8]:
+def _encode_string(string:Iterable[str], codes:dict) -> NDArray[np.uint8]:
     """Perform substitution of string to values in codes."""
     nt_arr = np.zeros((len(string),), dtype=np.uint8)
     for i, n in enumerate(string):
@@ -62,11 +63,11 @@ def _encode_string(string:str, codes:dict) -> NDArray[np.uint8]:
     return nt_arr
 
 
-def encode_nt_str(nts:str) -> NDArray[np.uint8]:
+def encode_nt_str(nts:Iterable[str]) -> NDArray[np.uint8]:
     return _encode_string(nts, NT_CODES)
 
 
-def encode_metstr_bismark(metstr:str) -> NDArray[np.uint8]:
+def encode_metstr_bismark(metstr:Iterable[str]) -> NDArray[np.uint8]:
     return _encode_string(metstr, BISMARK_CODES)
 
 
@@ -390,7 +391,7 @@ class LocusTable:
         # returns a struct with fields "counts", "values"
         readid_count = compute.value_counts(noncpg)
 
-        m = compute.greater_equal(
+        m = compute.greater(
             readid_count.field('counts'),
             pa.scalar(max_noncpg)
         )
@@ -667,17 +668,26 @@ def process_bam(bamfn, regionsfn:str|Path,
         read_arrays['is_forward'][read_i] = aln.a.is_forward
         if include_read_name:
             read_arrays['read_name'][read_i] = aln.a.query_name
-        encoded_nt = encode_nt_str(aln.a.query_sequence, )
+
+        # per locus data
+        locus_data = aln.locus_values
+        encoded_nt = encode_nt_str(locus_data.nucleotides.values(), )
         loci_arrays['nucleotide'][position_i:position_j] = encoded_nt
-        loci_arrays['phred_scores'][position_i:position_j] = np.array(aln.a.query_qualities, dtype=np.uint8)
+        loci_arrays['phred_scores'][position_i:position_j] = np.array(
+            list(locus_data.qualities.values()), dtype=np.uint8
+        )
         loci_arrays['chrm'][position_i:position_j] = chrm_map[aln.a.reference_name]
-        ref_p = aln.a.get_reference_positions(full_length=True)
-        ref_p = np.array([POS_NP_DTYPE(n) if n is not None else max_pos for n in ref_p])
+        ref_p = np.array(
+            list(locus_data.nucleotides.keys()),
+            dtype=POS_NP_DTYPE
+        )
         loci_arrays['position'][position_i:position_j] = ref_p
         loci_arrays['readID'][position_i:position_j] = readID
         met_encoded = encode_metstr_bismark(aln.metstr)
         loci_arrays['methylation'][position_i:position_j] = met_encoded
-        loci_arrays['is_cpg'][position_i:position_j] = np.array(list(aln.metstr.lower())) == 'z'
+        s = list(aln.metstr.lower())
+        iscpg =  np.array(list(aln.metstr.lower())) == 'z'
+        loci_arrays['is_cpg'][position_i:position_j] = iscpg
         loci_arrays['is_insertion'][position_i:position_j] = ref_p ==  max_pos
 
     if not include_read_name:
@@ -690,11 +700,11 @@ def process_bam(bamfn, regionsfn:str|Path,
     del read_arrays
 
     read_metadata = ReadTable(
-        pa.Table.from_pydict(pa_read_arrays)
+        pa.Table.from_pydict(pa_read_arrays, )
     )
     del pa_read_arrays
 
-    pa_loci_arrays =     pa_read_arrays = {
+    pa_loci_arrays = {
         k: pa.array(v) for k, v in loci_arrays.items()
     }
     logger.info('max point probably')

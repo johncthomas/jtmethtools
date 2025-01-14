@@ -62,16 +62,13 @@ class ImageMaker:
 
         self.window:AlignmentsData = window
 
-
         # add padding, and ensure gaps are shown by creating     a
         #  blank read that hits every position between the start
         #  and end of the window.
         self.width = width = end-start
 
-
         # If there's too many reads, filter to the required number
         read_ids = compute.unique(window.locus_data.readID).to_numpy()
-
         if read_ids.shape[0] > rows:
             np.random.seed(seed)
             read_ids = np.random.choice(read_ids, rows, replace=False)
@@ -303,10 +300,10 @@ class ImageMaker:
 @define
 class Image:
     array:NDArray[PIXEL_DTYPE]
-    channel_names: list[str]
+    channel_names: Tuple[str]
     name:str='noname'
 
-    def to_file(self, outfn:Pathesque,):
+    def to_file(self, outfn:Pathesque, gzip=True):
         """Write array with metadata.
 
         File will be gzipped if outfn endswith ".gz"."""
@@ -315,23 +312,25 @@ class Image:
                     additional_metadata={
                         'channel_names':self.channel_names,
                         'name':self.name
-                    })
+                    },
+                    gzip=gzip)
 
     @classmethod
     def from_file(cls, fn:Pathesque):
         array, metadata = read_array(fn)
-        return cls(array,
-                   channel_names=metadata['channel_names'],
-                   name=metadata['name']
-                   )
+        kwargs = {}
+        for k in ('name', 'channel_names'):
+            if k in metadata:
+                kwargs[k] = metadata[k]
+        return cls(array, **kwargs)
 
-    @classmethod
-    def from_dict(cls, d:dict[str,NDArray], name='noname'):
-        return cls(
-            np.array(list(d.values())),
-            channel_names=list(d.keys()),
-            name=name
-        )
+    # @classmethod
+    # def from_dict(cls, d:dict[str,NDArray], name='noname'):
+    #     return cls(
+    #         np.array(list(d.values())),
+    #         channel_names=list(d.keys()),
+    #         name=name
+    #     )
 
     def to_dict(self) -> dict[str, PixelArray]:
         return {k:self.array[i] for i, k in enumerate(self.channel_names)}
@@ -383,7 +382,6 @@ def generate_images_in_regions(
             continue
 
         imagedict = imgfactory.get_pixarray_dict(layers)
-        images = list(imagedict.values())
 
         metadata['n_rows_with_alignment'] = n_alignments
         yield posrange, imagedict, metadata
