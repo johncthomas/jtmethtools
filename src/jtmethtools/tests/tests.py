@@ -41,6 +41,8 @@ oneCpG	2	1	107	12	10M	*	0	10	TTCGTTTTTT	ABCDEFGHIJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:..
 twoCpG	2	1	107	12	10M	*	0	10	TTCGCGTTTT	ABCDEFGHIJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:..z.z.....
 mapq19	18	1	100	19	10M	*	0	10	TTTTTTTTTT	JJJJJJJJJJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:hhhhhhhhhh
 mapq20	18	1	100	20	10M	*	0	10	TTTTTTTTTT	JJJJJJJJJJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:hhhhhhhhhh
+oneCHH\t2\t1\t104\t22\t10M\t*\t0\t10\tTTCTTTTTTT\tABCDEFGHIJ\tNM:i:tag0\tMD:Z:tag1\tXM:Z:..H.......
+twoCHH\t2\t1\t104\t22\t10M\t*\t0\t10\tTTCTTCTTTT\tABCDEFGHIJ\tNM:i:tag0\tMD:Z:tag1\tXM:Z:..H..H....
 """
 
 fn_test_bam = TESTDIR / 'img-test.sam'
@@ -179,6 +181,10 @@ def test_filter_read_data():
 
     filt_meth = read_data.filter_by_noncpg_met(max_noncpg=0)
     check_filtering(filt_meth, 'unmethRev', 'methRev')
+    filt_onechh = read_data.filter_by_noncpg_met(max_noncpg=1)
+    check_filtering(filt_onechh, 'oneCHH', rid_not_in='twoCHH')
+
+
 
 
 def test_merge_paired_alignment_values():
@@ -223,10 +229,12 @@ def test_merge_paired_alignment_values():
         use_quality_profile=True,
     )
 
-    res = testaln.get_locus_values()
-    expected = {'phreds': {10: 40, 14: 40, 15: 40, 12: 37, 13: 34},
-                    'nucleotides': {10: 'a', 14: 'h', 15: 'i', 12: 'c', 13: 'g'},
-                    'methylations': {10: 'A', 14: 'H', 15: 'I', 12: 'C', 13: 'G'}}
+    res = testaln.locus_values
+    expected = LocusValues(
+        qualities = {10: 40, 14: 40, 15: 40, 12: 37, 13: 34},
+        nucleotides = {10: 'a', 14: 'h', 15: 'i', 12: 'c', 13: 'g'},
+        methylations = {10: 'A', 14: 'H', 15: 'I', 12: 'C', 13: 'G'}
+    )
     assert  res == expected
 
     # check with order reversed, and highest quality
@@ -236,11 +244,12 @@ def test_merge_paired_alignment_values():
         use_quality_profile=False,
     )
 
-    expected['phreds'][12] = 40
-    expected['phreds'][13] = 40
+    expected.qualities[12] = 40
+    expected.qualities[13] = 40
 
-    res2 = testaln.get_locus_values()
+    res2 = testaln.locus_values
     assert res2 == expected
+
 
 
 
