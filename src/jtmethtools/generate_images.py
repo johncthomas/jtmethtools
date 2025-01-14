@@ -1,28 +1,24 @@
 #!/usr/bin/env python
 
-import os
-
-import numpy as np
-
 from jtmethtools.images import *
 import argparse
 import datetime
 
 
-def run_image_gen(
+def run_image_gen__one_per_layer(
         bam:Pathesque,
         regions:Pathesque,
         outdir:Pathesque,
         layers:list[str],
         height:int,
-        single_eneded=False,
+        single_ended=False,
         **imggen_kwargs
 ):
-
+    logger.info("run_image_gen__one_per_layer (that is one file per layer)")
     bam, regions, outdir = [Path(x) for x in (bam, regions, outdir)]
 
     logger.info(
-        f"{bam=}, {regions=}, {outdir=}, {layers=}"
+        f"Args: {bam=}, {regions=}, {outdir=}, {layers=}, {height=}, {imggen_kwargs=}"
     )
 
     os.makedirs(outdir, exist_ok=True)
@@ -31,7 +27,7 @@ def run_image_gen(
     rd = process_bam(
         bam,
         regions,
-        single_ended=single_eneded
+        single_ended=single_ended
     )
     next1 = datetime.datetime.now()
     logger.info('Time to process BAM:', start - next1)
@@ -50,7 +46,7 @@ def run_image_gen(
         for layer_name, img in pixarrays.items():
             n_images += 1
             fn = outdir / f'image.{loci.name}.{layer_name}.tar.gz'
-            write_array(img, fn, gzip=True)
+            Image(img, (layer_name,)).to_file(fn, gzip=True)
 
     time_after_writing = datetime.datetime.now()
     logger.info(f"Time to write {n_images} images: {time_after_writing - next1}")
@@ -58,7 +54,8 @@ def run_image_gen(
 
 def parse_args():
     argparser = argparse.ArgumentParser(
-        description="Generate images from BAM files oni specified regions, or view available layers."
+        description="Generate arrays from BAM files in specified regions, or view available "
+                    "layer methods."
     )
 
     subparsers = argparser.add_subparsers(
@@ -143,21 +140,21 @@ def parse_args():
         help="List available layers."
     )
 
-    plot_parser = subparsers.add_parser(
-        "plot",
-        help="Draw image layers."
-    )
-
-    plot_parser.add_argument(
-        'array_file',
-
-        help='File name to draw.'
-    )
-
-    plot_parser.add_argument(
-        'out_file',
-        help='Output file. Image type will be infered from file name (I recommend "*.png").'
-    )
+    # plot_parser = subparsers.add_parser(
+    #     "plot",
+    #     help="Draw image layers."
+    # )
+    #
+    # plot_parser.add_argument(
+    #     'array_file',
+    #
+    #     help='File name to draw.'
+    # )
+    #
+    # plot_parser.add_argument(
+    #     'out_file',
+    #     help='Output file. Image type will be infered from file name (I recommend "*.png").'
+    # )
 
     return argparser.parse_args()
 
@@ -191,20 +188,40 @@ def main():
 
     if args.command == "run":
         del args.command
+
         if not check_layers(args.layers):
             exit(1)
+
+        # set logger
         logger.remove()
         if not args.quiet:
             from jtmethtools.util import set_logger
             set_logger('INFO')
         del args.quiet
-        run_image_gen(**vars(args))
+
+        # add a log file
+        logfn = os.path.join(args.outdir, "00_log_{time}.txt")
+        logger.add(logfn, level='INFO')
+
+        run_image_gen__one_per_layer(**vars(args))
+
     elif args.command == "layers":
         print_available_layers()
     elif args.command == 'plot':
         plot_an_image(args.array_file, args.out_file)
 
 
+def ttest():
+    os.chdir('/home/jcthomas/DevLab/NIMBUS/Data/test')
+    print('yes')
+    run_image_gen__one_per_layer(
+        bam=Path('bismark_10k.bam'),
+        regions=Path('regions-table.4for10kbam.tsv'),
+        outdir=Path('testt'),
+        layers=['bases', 'phred', 'mapping_quality', 'methylated_cpg'],
+        height=50,
+        **{'min_cpg': 1, 'max_other_met': 1000, 'min_alignments': 0, 'min_mapq': 40},
+    )
 
 if __name__ == '__main__':
     main()
