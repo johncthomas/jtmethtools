@@ -20,3 +20,8 @@ import jtmethtools as jtm
 fn = 'image.region_name.layer.tar.gz'
 array, metadata = jtm.images.read_array(fn)
 ```
+
+## plot an array
+```python
+plt.imshow(array, interpolation='nearest', cmap='gray')
+```
