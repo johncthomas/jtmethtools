@@ -49,6 +49,7 @@ class Regions:
     starts: dict[str, NDArray[int]]
     ends: dict[str, NDArray[int]]
     names: dict[str, NDArray[str]]
+    #todo NIMBUS should subclass this and add thresholds
     thresholds: dict[str, float] = None
     df: pd.DataFrame = None
 
@@ -77,7 +78,6 @@ class Regions:
 
     @classmethod
     def from_bed(cls, filename: Pathy) -> Self:
-        raise NotImplementedError("Table now needs thresholds.")
         df = load_region_bed(filename)
         return cls.from_df(df)
 
@@ -89,6 +89,7 @@ class Regions:
             starts={k: sdf[k].Start.values for k in sdf},
             ends={k: sdf[k].End.values for k in sdf},
             names={k: sdf[k].Name.values for k in sdf},
+            # todo move to nimbus
             thresholds=df.Threshold.to_dict() if 'Threshold' in df.columns.values else None,
             df=df
         )
@@ -96,7 +97,9 @@ class Regions:
     def starts_ends_of_chrm(self, chrm) -> (NDArray[int], NDArray[int]):
         return (self.starts[chrm], self.ends[chrm])
 
+    # todo move to nimbus
     def get_region_threshold(self, name):
+
         return self.thresholds[name]
 
 def alignment_overlaps_region(
