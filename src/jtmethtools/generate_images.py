@@ -3,7 +3,8 @@
 from jtmethtools.images import *
 import argparse
 import datetime
-
+import importlib.metadata
+import jtmethtools
 
 def run_image_gen__one_per_layer(
         bam:Pathesque,
@@ -126,7 +127,7 @@ def parse_args():
         '--single-ended',
         action='store_true',
         help="Assume single-ended reads (removes requirement for BAM to be sorted in any "
-             "particular way. May also improve performance on single ended files, but isn't required."
+             "particular way)."
     )
     run_parser.add_argument(
         '--quiet',
@@ -202,6 +203,8 @@ def main():
         # add a log file
         logfn = os.path.join(args.outdir, "00_log_{time}.txt")
         logger.add(logfn, level='INFO')
+
+        logger.info(f"V{str(importlib.metadata.version(jtmethtools.__name__))}")
 
         run_image_gen__one_per_layer(**vars(args))
 

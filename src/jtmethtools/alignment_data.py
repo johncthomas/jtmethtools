@@ -613,6 +613,7 @@ def process_bam(bamfn, regionsfn:str|Path,
 
     bam = AlignmentFile(bamfn)
 
+    logger.info('Counting number of reads that hit a region')
     for i, aln in enumerate(iter_bam(bam, paired_end=paired)):
         aln:Alignment
 
@@ -620,10 +621,7 @@ def process_bam(bamfn, regionsfn:str|Path,
             n_reads += 1
             n_bases += len(aln.metstr)
 
-        if not i % 100_000:
-            if i:
-                logger.info(f"{n_reads} of {i} reads checked hit a region {n_reads/i*100:.2}%")
-    logger.info(f"{n_reads} of {i} reads checked hit a region {n_reads / i * 100:.2}%")
+    logger.info(f"{n_reads} of {i} reads hit a region {n_reads / i * 100:.2f}%")
 
     read_arrays = {}
     for col in iter_read_cols():
@@ -641,7 +639,7 @@ def process_bam(bamfn, regionsfn:str|Path,
             shape=(n_bases,)
         )
 
-    logger.info('After:')
+    logger.info('After creating empty arrays:')
     print_memory_footprint()
 
     max_pos = np.iinfo(POS_NP_DTYPE).max
