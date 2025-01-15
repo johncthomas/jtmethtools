@@ -35,7 +35,6 @@ def run_image_gen__one_per_layer(
 
     n_images = 0
     for loci, pixarrays, metadata in generate_images_in_regions(
-        rd,
         regions=Regions.from_file(regions),
         layers=layers,
         rows=height,
@@ -55,8 +54,11 @@ def run_image_gen__one_per_layer(
 
 def parse_args():
     argparser = argparse.ArgumentParser(
-        description="Generate arrays from BAM files in specified regions, or view available "
-                    "layer methods."
+        description=(
+            "Generate arrays from BAM files in specified regions, or view available "
+            "layer methods.\n\nOutputs .tar.gz files that can be loaded in python with\n\t"
+            "`array, metadata = jtmethtools.images.read_array(fn)`"
+        )
     )
 
     subparsers = argparser.add_subparsers(
@@ -78,7 +80,7 @@ def parse_args():
         '--regions', '-r',
         type=str,
         required=True,
-        help="Path to the regions file."
+        help="Path to the regions file. A BED or TSV with columns 'Name', 'Chrm', 'Start' & 'End'."
     )
     run_parser.add_argument(
         '--outdir', '-o',
@@ -91,7 +93,7 @@ def parse_args():
         type=str,
         nargs='+',
         required=True,
-        help="List of layers to include in the generated images."
+        help="List of layers to include in the generated images. Get list of valid layers with `jtm-generate-images layers`"
     )
     run_parser.add_argument(
         '--height', '-H',
@@ -109,7 +111,7 @@ def parse_args():
         '--max-other-met', '-m',
         type=int,
         default=np.inf,
-        help="Maximum number of non-CpG methylations allowed."
+        help="Maximum number of non-CpG methylations allowed in a read."
     )
     run_parser.add_argument(
         '--min-alignments', '-a',
@@ -126,8 +128,7 @@ def parse_args():
     run_parser.add_argument(
         '--single-ended',
         action='store_true',
-        help="Assume single-ended reads (removes requirement for BAM to be sorted in any "
-             "particular way)."
+        help="Assume single-ended reads (reduces memory usage with unsorted BAMs)."
     )
     run_parser.add_argument(
         '--quiet',
