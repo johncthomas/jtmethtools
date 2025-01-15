@@ -21,4 +21,4 @@ dependencies = [
 where = ["src"]
 
 [project.scripts]
-jtm-generate-images = "jtmethtools.generate_images:main"
+jtm-generate-images = "jtmethtools.cli_generate_images:parse_args_and_run"
