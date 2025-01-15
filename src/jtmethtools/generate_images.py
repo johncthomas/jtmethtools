@@ -35,6 +35,7 @@ def run_image_gen__one_per_layer(
 
     n_images = 0
     for loci, pixarrays, metadata in generate_images_in_regions(
+        rd,
         regions=Regions.from_file(regions),
         layers=layers,
         rows=height,
