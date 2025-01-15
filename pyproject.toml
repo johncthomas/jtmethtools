@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jtmethtools"
-version = "0.2.3"
+version = "0.2.4"
 description = "Tools & data structures for methylation data."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,7 +13,8 @@ dependencies = [
     "pysam>=0.22.1",
     "pandas>=2.0.0",
     "attrs",
-    "pytest"
+    "pytest",
+    "pyarrow==18.1"
 ]
 
 [tool.setuptools.packages.find]
