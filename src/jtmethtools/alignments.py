@@ -93,6 +93,17 @@ class Regions:
     def starts_ends_of_chrm(self, chrm) -> (NDArray[int], NDArray[int]):
         return (self.starts[chrm], self.ends[chrm])
 
+    def region_at_locus(self, chrm:str, locus:int, missing_value=False) \
+            -> str|False:
+        """Return region name at locus. Does not check for overlapping regions.
+        Return `missing_value` if no region hit."""
+        if chrm not in self.chromsomes:
+            return missing_value
+        m = (locus >= self.starts[chrm]) & (locus < self.ends[chrm])
+        if any(m):
+            return self.names[chrm][m][0]
+        else:
+            return missing_value
 
 def alignment_overlaps_region(
         alignment: AlignedSegment,
