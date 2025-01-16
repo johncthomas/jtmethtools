@@ -49,8 +49,6 @@ class Regions:
     starts: dict[str, NDArray[int]]
     ends: dict[str, NDArray[int]]
     names: dict[str, NDArray[str]]
-    #todo NIMBUS should subclass this and add thresholds
-    thresholds: dict[str, float] = None
     df: pd.DataFrame = None
 
     def iter(self) -> typing.Iterable[LociRange]:
@@ -89,18 +87,12 @@ class Regions:
             starts={k: sdf[k].Start.values for k in sdf},
             ends={k: sdf[k].End.values for k in sdf},
             names={k: sdf[k].Name.values for k in sdf},
-            # todo move to nimbus
-            thresholds=df.Threshold.to_dict() if 'Threshold' in df.columns.values else None,
             df=df
         )
 
     def starts_ends_of_chrm(self, chrm) -> (NDArray[int], NDArray[int]):
         return (self.starts[chrm], self.ends[chrm])
 
-    # todo move to nimbus
-    def get_region_threshold(self, name):
-
-        return self.thresholds[name]
 
 def alignment_overlaps_region(
         alignment: AlignedSegment,
@@ -272,7 +264,6 @@ class Alignment:
     @cached_property
     def _a1_a2_overlaplen(self):
         """Returns alignments in position order and length of the overlap"""
-
 
         a1, a2 = self.a, self.a2
 
