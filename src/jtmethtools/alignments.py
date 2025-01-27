@@ -544,13 +544,10 @@ def _iter_bam_se(
         yield aln, None
 
 
-def iter_bam(
-        bam:str|Path|AlignmentFile,
-        paired_end:bool=True,
-        kind='bismark',
-) -> Iterable[Alignment]:
-    """Iterate over a bam file, yielding Alignments.
-    """
+def iter_bam_segments(
+    bam: str | Path | AlignmentFile,
+    paired_end: bool = True,
+) -> Iterable[Tuple[AlignedSegment, AlignedSegment|None]]:
     bam = _load_bam(bam)
     sorting_method = bam.header.get('HD', {}).get('SO', 'Unknown')
 
@@ -564,12 +561,23 @@ def iter_bam(
                 f"If it's paired end and sorted by coordinate it shouldn't be too bad... ({sorting_method=})"
             )
             bamiter = _iter_pe_bam_unsorted(bam)
-        for aln in bamiter:
-            yield Alignment(*aln, kind=kind)
     else:
         bamiter = _iter_bam_se(bam, )
-        for aln in bamiter:
-            yield Alignment(aln, kind=kind)
+    for aln in bamiter:
+        yield aln
+    return None
+
+
+def iter_bam(
+        bam:str|Path|AlignmentFile,
+        paired_end:bool=True,
+        kind='bismark',
+
+) -> Iterable[Alignment]:
+    """Iterate over a bam file, yielding Alignments."""
+
+    for aln in iter_bam_segments(bam, paired_end):
+        yield Alignment(*aln, kind=kind)
     return None
 
 
