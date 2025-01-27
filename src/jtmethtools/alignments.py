@@ -1,5 +1,5 @@
 import typing
-from typing import Collection, Tuple, Literal, Self, Iterable
+from typing import Collection, Tuple, Literal, Self, Iterable, Union
 from numpy.typing import NDArray
 
 import pandas as pd
@@ -94,7 +94,7 @@ class Regions:
         return (self.starts[chrm], self.ends[chrm])
 
     def region_at_locus(self, chrm:str, locus:int, missing_value=False) \
-            -> str|False:
+            -> Union[str,False]:
         """Return region name at locus. Does not check for overlapping regions.
         Return `missing_value` if no region hit."""
         if chrm not in self.chromsomes:
@@ -105,11 +105,13 @@ class Regions:
         else:
             return missing_value
 
+
 def alignment_overlaps_region(
         alignment: AlignedSegment,
         regions: Regions) -> bool | str:
     """Check if an alignment overlaps a region."""
     ref = alignment.reference_name
+
     try:
         regStart, regEnd = regions.starts_ends_of_chrm(ref)
     except KeyError:
@@ -527,7 +529,7 @@ def _iter_pe_bam_unsorted(
 
 def _iter_bam_se(
         bam:str|Path|AlignmentFile,
-) -> Iterable[AlignedSegment]:
+) -> Iterable[Tuple[AlignedSegment, Literal[None]]]:
     """Iterate over a single-ended bam file, yielding pairs of alignments.
     Where a read is unpaired, yield (alignment, None).
 
@@ -539,7 +541,7 @@ def _iter_bam_se(
     for i, aln in enumerate(bam):
         logger.debug(f'Alignment #{i}')
 
-        yield aln
+        yield aln, None
 
 
 def iter_bam(
