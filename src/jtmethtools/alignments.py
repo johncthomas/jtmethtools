@@ -552,13 +552,14 @@ def iter_bam_segments(
     sorting_method = bam.header.get('HD', {}).get('SO', 'Unknown')
 
     if paired_end:
-        if sorting_method == 'queryname':
+        if (sorting_method == 'queryname') or (sorting_method == 'coordinate'):
             bamiter = _iter_bam_pe_qname_sorted(bam )
         else:
-            logger.info(
-                "Paired end bam not sorted by queryname - this might take a little longer and use more memory.\n"
-                "If it's actually single-ended it'll take a lot more memory. Use the --single-ended option to avoid this.\n"
-                f"If it's paired end and sorted by coordinate it shouldn't be too bad... ({sorting_method=})"
+
+            logger.warning(
+                "Paired end bam not sorted by queryname or coordinate - this might take a little longer and use a lot more memory.\n"
+                "If it's actually single-ended use the --single-ended option to avoid these issues.\n"
+                f" ({sorting_method=})"
             )
             bamiter = _iter_pe_bam_unsorted(bam)
     else:
