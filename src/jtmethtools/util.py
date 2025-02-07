@@ -67,7 +67,9 @@ def split_table_by_chrm(table:pd.DataFrame, chrm_col='Chrm') \
         -> SplitTable:
     """Split a table by chromosomes, returning dict keyed by each
     chromosome."""
-    return {c: table.loc[table[chrm_col] == c] for c in table[chrm_col].unique()}
+    bg = {c: table.loc[table[chrm_col] == c] for c in table[chrm_col].unique()}
+    bg = {k: t.set_index('Locus') for k, t in bg.items()}
+    return bg
 
 
 def load_region_bed(fn) -> pd.DataFrame:
