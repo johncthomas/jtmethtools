@@ -152,7 +152,7 @@ class ReadTable:
                 " scale and image gen would need to be rewritten"
             )
 
-    def _nontable_attr(self):
+    def get_metadata(self):
         return dict(max_mapq=self.max_mapq)
 
     def get_col(self, col:str):
@@ -218,35 +218,35 @@ class ReadTable:
         logger.trace(v)
         return v[0]
 
-    def to_parquet(self, fn: str|Path):
-        """Write table in Parquet format"""
-        parquet.write_table(self.table, fn)
-
-    @classmethod
-    def from_parquet(cls, fn: Pathesque):
-        """Read table from Parquet format"""
-        return cls(parquet.read_table(fn))
-
-    def to_dir(self, directory: str | Path):
-        directory = pathlib.Path(directory)
-        os.makedirs(directory, exist_ok=True)
-        self.to_parquet(directory / 'read-metadata.parquet')
-        # with open(directory / 'read-attributes.dict', 'w') as f:
-        #     f.write(str({...}))
-
-    @classmethod
-    def from_dir(cls, directory: str | Path):
-        directory = pathlib.Path(directory)
-        table = parquet.read_table(directory / 'read-metadata.parquet')
-        # with open(directory / 'read-attributes.dict'', 'r') as f:
-        #     d = eval(f.read())
-        return cls(table)
+    # def to_parquet(self, fn: str|Path):
+    #     """Write table in Parquet format"""
+    #     parquet.write_table(self.table, fn)
+    #
+    # @classmethod
+    # def from_parquet(cls, fn: Pathesque):
+    #     """Read table from Parquet format"""
+    #     return cls(parquet.read_table(fn))
+    #
+    # def to_dir(self, directory: str | Path):
+    #     directory = pathlib.Path(directory)
+    #     os.makedirs(directory, exist_ok=True)
+    #     self.to_parquet(directory / 'read-metadata.parquet')
+    #     # with open(directory / 'read-attributes.dict', 'w') as f:
+    #     #     f.write(str({...}))
+    #
+    # @classmethod
+    # def from_dir(cls, directory: str | Path):
+    #     directory = pathlib.Path(directory)
+    #     table = parquet.read_table(directory / 'read-metadata.parquet')
+    #     # with open(directory / 'read-attributes.dict'', 'r') as f:
+    #     #     d = eval(f.read())
+    #     return cls(table)
 
     def filter(self, *args, **kwargs) -> Self:
         """Args passed to self.table.filter(), returns LocusData with
         filtered self.table"""
         return ReadTable(self.table.filter(*args, **kwargs),
-                         **self._nontable_attr())
+                         **self.get_metadata())
 
 
 
@@ -311,6 +311,9 @@ class LocusTable:
 
         return compute.and_(loc_m, chrm_m)
 
+    def get_metadata(self) -> dict:
+        return {'chrm_map':self.chrm_map}
+
 
     def filter(self, *args, **kwargs) -> Self:
         """Args passed to self.table.filter(), returns LocusData with
@@ -336,20 +339,20 @@ class LocusTable:
         return window
 
 
-    def to_dir(self, directory:str|Path):
-        directory = pathlib.Path(directory)
-        os.makedirs(directory, exist_ok=True)
-        self.to_parquet(directory/'loci-data.parquet')
-        with open(directory/'locus-attributes.dict', 'w') as f:
-            f.write(str({'chrm_map':self.chrm_map}))
-
-    @classmethod
-    def from_dir(cls, directory:str|Path):
-        directory = pathlib.Path(directory)
-        table = parquet.read_table(directory/'loci-data.parquet')
-        with open(directory/'locus-attributes.dict', 'r') as f:
-            d = eval(f.read())
-        return cls(table, **d)
+    # def to_dir(self, directory:str|Path):
+    #     directory = pathlib.Path(directory)
+    #     os.makedirs(directory, exist_ok=True)
+    #     self.to_parquet(directory/'loci-data.parquet')
+    #     with open(directory/'locus-metadata.json', 'w') as f:
+    #         json.dump({'chrm_map':self.chrm_map})
+    #
+    # @classmethod
+    # def from_dir(cls, directory:str|Path):
+    #     directory = pathlib.Path(directory)
+    #     table = parquet.read_table(directory/'loci-data.parquet')
+    #     with open(directory/'locus-attributes.dict', 'r') as f:
+    #         d = eval(f.read())
+    #     return cls(table, **d)
 
     # @classmethod
     # def from_parquet(cls, fn:str|Path):
@@ -401,9 +404,6 @@ class LocusTable:
         return self.filter_by_readID(bad_rids, remove_ids=True)
 
 
-
-
-
 @define
 class AlignmentsData:
     locus_data:LocusTable
@@ -428,26 +428,31 @@ class AlignmentsData:
     #     reads_ids = self.read_data.read_ids_at_loci(start, end, chrm)
 
     def to_dir(self, directory:Pathesque):
+        directory = Path(directory)
         directory = pathlib.Path(directory)
         os.makedirs(directory, exist_ok=True)
-        self.locus_data.to_dir(directory)
-        self.read_data.to_dir(directory)
-        # add the rest
-        d = self._get_nontable_attr()
+        parquet.write_table(self.locus_data.table, directory/'locus-table.parquet')
+        parquet.write_table(self.read_data.table, directory/'read-table.parquet')
 
-        with open(directory/'short-fields.json', 'w') as f:
-            json.dump(d, f)
+        metadata = {
+            'locus':self.locus_data.get_metadata(),
+            'read':self.read_data.get_metadata()
+        }
 
-    @classmethod
-    def from_dir(cls, directory:Pathesque):
-        directory = pathlib.Path(directory)
-        loci = LocusTable.from_dir(directory)
-        read = ReadTable.from_dir(directory)
 
-        with open(directory/'short-fields.json', 'r') as f:
-            d = json.load(f)
+        with open(directory/'metadata.json', 'w') as f:
+            json.dump(metadata, f)
 
-        return cls(loci, read, **d)
+    # @classmethod
+    # def from_dir(cls, directory:Pathesque):
+    #     directory = pathlib.Path(directory)
+    #     loci = LocusTable.from_dir(directory)
+    #     read = ReadTable.from_dir(directory)
+    #
+    #     with open(directory/'short-fields.json', 'r') as f:
+    #         d = json.load(f)
+    #
+    #     return cls(loci, read, **d)
 
     @staticmethod
     def from_bam(
@@ -527,6 +532,8 @@ class AlignmentsData:
 
         return AlignmentsData(locus_data, read_data,
                               **self._get_nontable_attr())
+
+
 
 
 
@@ -727,8 +734,12 @@ def process_bam(bamfn, regionsfn:str|Path,
     logger.info("Removing insertions...")
     loci_data.remove_insertions()
 
-    return AlignmentsData(loci_data, read_metadata, bam_fn=bamfn,
-                          bam_header=str(alignmentfile.header))
+    return AlignmentsData(
+        loci_data,
+        read_metadata,
+        bam_fn=bamfn,
+        bam_header=str(alignmentfile.header)
+    )
 
 
 def sampledown_rows(arr:NDArray, max_rows:int) -> NDArray:
@@ -741,6 +752,12 @@ def sampledown_rows(arr:NDArray, max_rows:int) -> NDArray:
         )
     )
     return arr[rowi]
+
+
+
+
+
+
 
 
 # TESTDIR = Path('/home/jcthomas/python/jtmethtools/src/jtmethtools/tests/')

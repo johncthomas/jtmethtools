@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jtmethtools"
-version = "0.2.6b0"
+version = "0.2.7"
 description = "Tools & data structures for methylation data."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,4 +22,5 @@ dependencies = [
 where = ["src"]
 
 [project.scripts]
-jtm-generate-images = "jtmethtools.cli_generate_images:parse_args_and_run"
+jtm-generate-images = "jtmethtools.scripts.generate_images:parse_args_and_run"
+jtm-write-alignment-data = "jtmethtools.scripts.write_alignment_dataset:bam_to_parquet"
