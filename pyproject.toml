@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jtmethtools"
-version = "0.2.7"
+version = "0.2.8"
 description = "Tools & data structures for methylation data."
 readme = "README.md"
 requires-python = ">=3.10"
