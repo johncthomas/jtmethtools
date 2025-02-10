@@ -2,8 +2,7 @@ import typing
 from pathlib import Path
 from typing import Collection, Tuple, Self
 import tarfile
-import os
-import json
+
 import tempfile
 
 import pandas as pd
@@ -66,10 +65,9 @@ def load_bismark_calls_table(fn) -> pd.DataFrame:
 def split_table_by_chrm(table:pd.DataFrame, chrm_col='Chrm') \
         -> SplitTable:
     """Split a table by chromosomes, returning dict keyed by each
-    chromosome."""
-    chrm_table = {c: table.loc[table[chrm_col] == c] for c in table[chrm_col].unique()}
-    if 'Locus' in table.columns:
-        chrm_table = {k:t.set_index('Locus', drop=False) for k, t in chrm_table.items()}
+    chromosome. New split tables indexed by Locus."""
+    chrm_table = {c: table.loc[table[chrm_col] == c].set_index('Locus', drop=False)
+                  for c in table[chrm_col].unique()}
 
     return chrm_table
 
@@ -83,9 +81,6 @@ def load_region_bed(fn) -> pd.DataFrame:
 
     regions.set_index('Name', inplace=True, drop=False)
     return regions
-
-
-import json
 
 
 def write_array(
