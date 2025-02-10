@@ -132,7 +132,7 @@ def alignment_overlaps_region(
     return False
 
 
-def get_bismark_met_str(a: AlignedSegment) -> str:
+def get_bismark_met_str(a: AlignedSegment) -> str|None:
     # this works in every case I've seen...
     tags = a.get_tags()
     tag = None
@@ -149,7 +149,7 @@ def get_bismark_met_str(a: AlignedSegment) -> str:
                 break
         if tag != 'XM':
             logger.warning(f"Can't find XM tag in alignment {a.query_name}, {tags=}")
-            met = ''
+            met = None
 
     return met
 
@@ -279,6 +279,15 @@ class Alignment:
         if self.kind == 'bismark':
             return get_bismark_met_str(a)
 
+
+    def has_metstr(self):
+        if get_bismark_met_str(self.a) is None:
+            return False
+        if self.a2 is not None:
+            if get_bismark_met_str(self.a2) is None:
+                return False
+        return True
+
     @cached_property
     def _a1_a2_overlaplen(self):
         """Returns alignments in position order and length of the overlap"""
@@ -306,14 +315,16 @@ class Alignment:
         it'll recalculate the PHRED scores using table from NGmerge:
             https://github.com/harvardinformatics/NGmerge
         """
-
+        if not self.has_metstr():
+            logger.debug("alignment does not have bismark tags, or is otherwise malformed, returning empty LocusValues")
+            return LocusValues({}, {}, {})
         if self.a2 is None:
             phreds, methylations, nucleotides = {}, {}, {}
             for r_pos, l_pos in self.a.get_aligned_pairs(matches_only=True):
                 phreds[l_pos] = self.a.query_qualities[r_pos]
                 nucleotides[l_pos] = self.a.query_sequence[r_pos]
                 methylations[l_pos] = self._get_met_str(self.a)[r_pos]
-        else:
+        else: # it's a paired alignment
 
             if self.use_quality_profile:
                 from jtmethtools.quality_profiles import quality_profile_match_41, quality_profile_mismatch_41
