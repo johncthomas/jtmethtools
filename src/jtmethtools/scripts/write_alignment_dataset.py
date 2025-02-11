@@ -1,18 +1,57 @@
+
 from pathlib import Path
-import sys
+import sys, os
+import datargs
+from dataclasses import dataclass, field
+from datetime import datetime
 
-def bam_to_parquet():
+def timestamp() -> str:
+    return datetime.now().strftime("%Y%m%d%H%M%S%f")
 
-    args =  sys.argv[1:]
+@datargs.argsclass(
+    description="""\
+Take a BAM and write every nucleotide as a 
+"""
+)
+class WADArgs:
+    bam: Path = field(metadata=dict(
+        help='BAM file will be converted to tables.',
+        aliases=['-b']
+    ))
+    outdir: Path =  field(metadata=dict(
+        help='Directory to which the tables will be written.',
+        aliases=['-o']
+    ))
+    regions: Path = field(metadata=dict(
+        help='Alignments that overlap with regions will be written to the table.',
+        aliases=['-r']
+    ))
 
-    if (len(args) != 3) or (args[0] in ('-h', '--help')):
-        print('Write a BAM to a Parquet table.\n\n  Usage: jtm-write-loci-table BAM OUTDIR REGIONS-TABLE')
-        exit(0)
-    bam, outdir, regions =  args
+    # optionals
+    quiet: bool = field(default=False, metadata=dict(
+        help='Alignments that overlap with regions will be written to the table.',
+    ))
+
+
+
+def bam_to_parquet(args:WADArgs):
+
     from jtmethtools.alignment_data import AlignmentsData, logger
+    dt = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    logger.add(args.outdir/f"log.{dt}.log", level='INFO')
+    if not args.quiet:
+        logger.add(print, level='INFO')
+    logger.info('Write alignment dataset')
     logger.info(str(args))
-    data = AlignmentsData.from_bam(bam, regions)
-    data.to_dir(outdir)
+
+    data = AlignmentsData.from_bam(args.bam, args.regions)
+    data.to_dir(args.outdir)
+
+
+def main():
+    a = datargs.parse(WADArgs)
+    bam_to_parquet(a)
+
 
 if __name__ == '__main__':
-    bam_to_parquet()
+    main()

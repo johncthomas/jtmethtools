@@ -1,10 +1,11 @@
-Methylation data tools. Arrow based tables for efficiently storing and processing Bismark BAMs. Module for producing pile-up images of regions for CNNs.
+Methylation data tools. Arrow based tables for efficiently storing and processing Bismark BAMs. Module for producing 
+pile-up images of regions for CNNs.
 
 # Convert a BAM to a parquet tables
 Script: `jtm-write-alignment-data`
 
-Outputs two tables, one with locus level (nucleotide, individual CpG, etc.) information, and one with read level information, plus metadata. (
-currently the only important metadata is chromosome ID -> name)
+Outputs two tables, one with locus level (nucleotide, individual CpG, etc.) information, and one with read level 
+information, plus metadata.
 
 To load the data in R:
 ```R
@@ -16,6 +17,8 @@ readTable <- read_parquet("dataset/read-table.parquet")
 metadata <- fromJSON("dataset/metadata.json")
 chrm_ids <- metadata['locus']['chrm_map']
 ```
+
+Most text data is encoded into integers. These mappings are recorded in the metadata.
 
 # Images for CNN
 2D pileups, as binary arrays with values between 0 & 1 representing different sequence features such as methylation state, 

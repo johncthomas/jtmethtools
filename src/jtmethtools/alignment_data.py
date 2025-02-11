@@ -46,10 +46,10 @@ Pathesque = str | Path | PathLike[str]
 TruePA = pa.scalar(True, type=pa.bool_())
 FalsePA = pa.scalar(False, type=pa.bool_())
 
-_ntcodes = dict(zip('ACGTN', np.array([1, 2, 3, 4, 0], dtype=np.uint8)))
+_ntcodes = dict(zip('ACGTN?', np.array([1, 2, 3, 4, 5, 0], dtype=np.uint8)))
 NT_CODES = _ntcodes | {v:k for k, v in _ntcodes.items()}
 
-_bsmk_codes = dict(zip('.ZHXU', np.array([0, 1, 2, 3, 4], dtype=np.uint8)))
+_bsmk_codes = dict(zip('?.ZHXU', np.array([0, 1, 2, 3, 4, 5], dtype=np.uint8)))
 BISMARK_CODES = _bsmk_codes | {v:k for k, v in _bsmk_codes.items()}
 
 def _encode_string(string:Iterable[str], codes:dict) -> NDArray[np.uint8]:
@@ -59,7 +59,7 @@ def _encode_string(string:Iterable[str], codes:dict) -> NDArray[np.uint8]:
         try:
             nt_arr[i] = codes[n]
         except KeyError:
-            pass
+            nt_arr[i] = codes['?']
     return nt_arr
 
 
@@ -434,9 +434,14 @@ class AlignmentsData:
         parquet.write_table(self.locus_data.table, directory/'locus-table.parquet')
         parquet.write_table(self.read_data.table, directory/'read-table.parquet')
 
+        makeints = lambda d: {k:int(v) for k, v in d.items()}
+
         metadata = {
             'locus':self.locus_data.get_metadata(),
-            'read':self.read_data.get_metadata()
+            'read':self.read_data.get_metadata(),
+            'bismark_codes':makeints(_bsmk_codes),
+            'nucleotide_codes':makeints(_ntcodes),
+            'alignments_data':self._get_nontable_attr()
         }
 
 
@@ -590,6 +595,7 @@ def process_bam(bamfn, regionsfn:str|Path,
                 filter_by_region=True,
                 include_read_name=False,
                 single_ended=False) -> AlignmentsData:
+    logger.info(f"Processing BAM, {bamfn}")
     regionsfn = str(regionsfn)
     # get the number of reads and the number of aligned bases
     n_reads = 0
@@ -601,9 +607,9 @@ def process_bam(bamfn, regionsfn:str|Path,
     else:
         regions = Regions.from_bed(regionsfn)
 
-    def check_hits_region() -> bool:
+    def check_hits_region(a) -> bool:
         if filter_by_region:
-            return len(aln.get_hit_regions(regions)) > 0
+            return len(a.get_hit_regions(regions)) > 0
         else:
             return True
 
@@ -612,8 +618,8 @@ def process_bam(bamfn, regionsfn:str|Path,
         chrm_map[i] = c
         chrm_map[c] = i
 
-    logger.info('\n')
-    logger.info(chrm_map)
+    logger.info('Chromsome\n')
+    logger.info(f"Chromosome codes = {chrm_map}")
 
     logger.info('Before creating creating empty arrays:')
     print_memory_footprint()
@@ -628,7 +634,7 @@ def process_bam(bamfn, regionsfn:str|Path,
             n_reads += 1
             n_bases += len(aln.metstr)
 
-    logger.info(f"{n_reads} of {i} reads hit a region {n_reads / i * 100:.2f}%")
+    logger.info(f"{n_reads} of {i} reads hit a region ({n_reads / i * 100:.2f}%)")
 
     read_arrays = {}
     for col in iter_read_cols():
@@ -656,7 +662,7 @@ def process_bam(bamfn, regionsfn:str|Path,
     for readID, aln in enumerate(iter_bam(alignmentfile, paired_end=paired)):
         aln:Alignment
 
-        if not check_hits_region():
+        if not readID in idx_of_hits:
             continue
 
         # deal with the table indicies
@@ -733,6 +739,8 @@ def process_bam(bamfn, regionsfn:str|Path,
 
     logger.info("Removing insertions...")
     loci_data.remove_insertions()
+
+    logger.info(f'Done processing {bamfn}.')
 
     return AlignmentsData(
         loci_data,

@@ -23,4 +23,4 @@ where = ["src"]
 
 [project.scripts]
 jtm-generate-images = "jtmethtools.scripts.generate_images:parse_args_and_run"
-jtm-write-alignment-data = "jtmethtools.scripts.write_alignment_dataset:bam_to_parquet"
+jtm-write-alignment-data = "jtmethtools.scripts.write_alignment_dataset:main"
