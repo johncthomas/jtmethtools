@@ -331,6 +331,7 @@ class Alignment:
             else:
                 quality_profile_match_41, quality_profile_mismatch_41 = None, None
 
+            # .aligned_pairs is read position->reference locus
             a1_loc_pos, a2_loc_pos = [
                 {r: q for (q, r) in ap if (q is not None) and (r is not None)}
                 for ap in (self.a.aligned_pairs, self.a2.aligned_pairs)
@@ -349,16 +350,20 @@ class Alignment:
             a1_metstr = get_bismark_met_str(self.a)
             a2_metstr = get_bismark_met_str(self.a2)
 
-            # get the values where the position only exists in one of the mates
-            for only_loc, loc_pos, a, metstr in (
-                    (a1_only, a1_loc_pos, self.a, a1_metstr),
-                    (a2_only, a2_loc_pos, self.a2, a2_metstr)
-            ):
-                for l in only_loc:
-                    p = loc_pos[l]
-                    phreds[l] = a.query_qualities[p]
-                    nucleotides[l] = a.query_sequence[p]
-                    methylations[l] = metstr[p]
+            try:
+                # get the values where the position only exists in one of the mates
+                for only_loc, loc_pos, a, metstr in (
+                        (a1_only, a1_loc_pos, self.a, a1_metstr),
+                        (a2_only, a2_loc_pos, self.a2, a2_metstr)
+                ):
+                    for l in only_loc:
+                        p = loc_pos[l]
+                        phreds[l] = a.query_qualities[p]
+                        nucleotides[l] = a.query_sequence[p]
+                        methylations[l] = metstr[p]
+            except:
+                print('BAM = ', self.filename, ' | Read = ', self.a.query_name)
+                raise
 
             for l in shared_loc:
                 a1_pos = a1_loc_pos[l]
