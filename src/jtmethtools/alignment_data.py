@@ -627,12 +627,18 @@ def process_bam(bamfn, regionsfn:str|Path,
     bam = AlignmentFile(bamfn)
 
     logger.info('Counting number of reads that hit a region')
+    idx_of_hits = set()
     for i, aln in enumerate(iter_bam(bam, paired_end=paired)):
         aln:Alignment
 
-        if check_hits_region():
-            n_reads += 1
-            n_bases += len(aln.metstr)
+        if check_hits_region(aln):
+            lmet = len(aln.metstr)
+            # malformed bismark data can result in empty metstr
+            #   for otherwise valid alignments
+            if lmet:
+                n_reads += 1
+                n_bases += lmet
+                idx_of_hits.add(i)
 
     logger.info(f"{n_reads} of {i} reads hit a region ({n_reads / i * 100:.2f}%)")
 

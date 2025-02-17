@@ -11,7 +11,7 @@ import numpy.typing as npt
 from numpy.typing import NDArray
 
 import pysam
-
+import json
 from loguru import logger
 logger.remove()
 
@@ -66,8 +66,16 @@ def split_table_by_chrm(table:pd.DataFrame, chrm_col='Chrm') \
         -> SplitTable:
     """Split a table by chromosomes, returning dict keyed by each
     chromosome. New split tables indexed by Locus."""
-    chrm_table = {c: table.loc[table[chrm_col] == c].set_index('Locus', drop=False)
-                  for c in table[chrm_col].unique()}
+
+    chrm_table = {
+        c: table.loc[table[chrm_col] == c]
+        for c in table[chrm_col].unique()
+    }
+    if "Locus" in table:
+        chrm_table = {
+            c:t.set_index('Locus', drop=False)
+            for c, t in chrm_table.items()
+        }
 
     return chrm_table
 
