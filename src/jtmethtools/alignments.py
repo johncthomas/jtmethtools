@@ -23,6 +23,8 @@ from pathlib import Path
 
 Pathy = str|Path
 
+ALIGNMENT_ERROR_COUNT = 0
+
 @define(slots=True)
 class LociRange:
     start:int
@@ -259,6 +261,21 @@ def get_ref_position(seq_i, ref_start, cigar):
 
     return None  # position not reached, or it's past the alignment
 
+class AlignmentFileFailure(Exception):
+    pass
+
+def count_alignment_error(max_errors:int|None=1000):
+    global ALIGNMENT_ERROR_COUNT
+
+    ALIGNMENT_ERROR_COUNT += 1
+    if max_errors is not None and (ALIGNMENT_ERROR_COUNT > max_errors):
+        raise AlignmentFileFailure(
+            f"Too many errors detected in alignment files ({max_errors=}). "
+            "Stopping processing on the assumption something is wrong and to avoid "
+            "a 100+ GB error log."
+        )
+
+
 
 @define
 class LocusValues:
@@ -315,9 +332,28 @@ class Alignment:
         it'll recalculate the PHRED scores using table from NGmerge:
             https://github.com/harvardinformatics/NGmerge
         """
+
+        empty_return =  LocusValues({}, {}, {})
         if not self.has_metstr():
-            logger.debug("alignment does not have bismark tags, or is otherwise malformed, returning empty LocusValues")
-            return LocusValues({}, {}, {})
+            count_alignment_error()
+            logger.warning(
+                f"Can't determine metstr for alignment of {self.a.query_name}, skipping."
+            )
+            return empty_return
+
+        for segment in (self.a, self.a2):
+            if segment is None:
+                continue
+            # this is assuming that we're ignoring all indels. If that changes this breaks.
+            align_len = sum([x[1] for x in segment.cigartuples if x[0] == 0])
+            metstr_len = len(get_bismark_met_str(segment))
+            if align_len != metstr_len:
+                count_alignment_error()
+                logger.warning(
+                    f"Length mismatch of methylation string for alignment of {self.a.query_name}, skipping"
+                )
+                return empty_return
+
         if self.a2 is None:
             phreds, methylations, nucleotides = {}, {}, {}
             for r_pos, l_pos in self.a.get_aligned_pairs(matches_only=True):
@@ -325,7 +361,6 @@ class Alignment:
                 nucleotides[l_pos] = self.a.query_sequence[r_pos]
                 methylations[l_pos] = self._get_met_str(self.a)[r_pos]
         else: # it's a paired alignment
-
             if self.use_quality_profile:
                 from jtmethtools.quality_profiles import quality_profile_match_41, quality_profile_mismatch_41
             else:
@@ -602,6 +637,3 @@ def iter_bam(
     for aln in iter_bam_segments(bam, paired_end):
         yield Alignment(*aln, kind=kind)
     return None
-
-
-
