@@ -185,18 +185,22 @@ def test_filter_read_data():
     check_filtering(filt_onechh, 'oneCHH', rid_not_in='twoCHH')
 
 
+@dataclass
+class A:
+    metstr: str
+    query_sequence: str
+    query_qualities: list[int]
+    aligned_pairs: list[Tuple[int, int]]
 
+    def get_tags(self):
+        return [None, None, ('XM', self.metstr)]
+
+    @property
+    def cigartuples(self):
+        return [(0, len(self.metstr))]
 
 def test_merge_paired_alignment_values():
-    @dataclass
-    class A:
-        metstr: str
-        query_sequence: str
-        query_qualities: list[int]
-        aligned_pairs: list[Tuple[int, int]]
 
-        def get_tags(self):
-            return [None, None, ('XM', self.metstr)]
 
     testa1 = A(
         metstr="ACDE",
@@ -249,9 +253,6 @@ def test_merge_paired_alignment_values():
 
     res2 = testaln.locus_values
     assert res2 == expected
-
-
-
 
 
 
