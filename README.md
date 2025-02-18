@@ -20,6 +20,7 @@ chrm_ids <- metadata['locus']['chrm_map']
 
 Most text data is encoded into integers. These mappings are recorded in the metadata.
 
+
 # Images for CNN
 2D pileups, as binary arrays with values between 0 & 1 representing different sequence features such as methylation state, 
 mapping quality and nucleotide sequence.

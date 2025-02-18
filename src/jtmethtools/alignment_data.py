@@ -640,7 +640,7 @@ def process_bam(bamfn, regionsfn:str|Path,
                 n_bases += lmet
                 idx_of_hits.add(i)
 
-    logger.info(f"{n_reads} of {i} reads hit a region ({n_reads / i * 100:.2f}%)")
+    logger.info(f"{n_reads} of {i} reads hit a region ({n_reads / i * 100:.2f}%). Table will have {n_bases} rows.")
 
     read_arrays = {}
     for col in iter_read_cols():

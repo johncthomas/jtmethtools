@@ -24,12 +24,10 @@ def set_logger(min_level='DEBUG'):
     logger.add(lambda msg: print(f"\033[96m{msg}\033[0m"), level="INFO", format="{message}")
 
 
+type SplitTable = dict[str, pd.DataFrame]
 
 
-SplitTable = dict[str, pd.DataFrame]
-
-
-def fasta_to_dict(fn: str, full_desc=False) -> dict[str, str]:
+def fasta_to_dict(fn: str|Path, full_desc=False) -> dict[str, str]:
     """Dict that maps record_name->sequence.
 
     By default splits the description on the first space, this should
