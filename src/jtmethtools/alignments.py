@@ -637,3 +637,17 @@ def iter_bam(
     for aln in iter_bam_segments(bam, paired_end):
         yield Alignment(*aln, kind=kind)
     return None
+
+# def ttest():
+#     i = 0
+#     logger.add(print, level='WARNING')
+#     for a in iter_bam('/home/jcthomas/OneDrive/DevLab/NIMBUS/Data/test/2025-02-03/SLX-22290.CMDL22001978_control_methylome.r_1_val_1_GRCh38_bismark_bt2_pe.deduplicated_sorted.bam'):
+#         i+=1
+#         try:
+#             x = a.metstr
+#         except:
+#             print(i, 'alignments without failing')
+#             raise
+# if __name__ == '__main__':
+#     ttest()
+
