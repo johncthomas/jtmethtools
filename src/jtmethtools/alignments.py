@@ -493,20 +493,20 @@ class Alignment:
                 minmax = max
             return minmax(self.a.mapping_quality, self.a2.mapping_quality)
 
-    def _iter_locus_metstr_bismark(self, a: AlignedSegment) -> Tuple[int, bool]:
-        """Iterate through the bismark methylation string, yielding
-        the chromosomal position of current CpG and it's methylation
-        state (True if methylated)
-        """
-        met_str = self._get_met_str(a)
-        for i, m in enumerate(met_str):
-            if m in 'zZ':
-                locus = get_ref_position(i, a.reference_start, a.cigartuples)
-
-                if locus is None:
-                    continue
-                locus += 1
-                yield locus, m == 'Z'
+    # def _iter_locus_metstr_bismark(self, a: AlignedSegment) -> Tuple[int, bool]:
+    #     """Iterate through the bismark methylation string, yielding
+    #     the chromosomal position of current CpG and it's methylation
+    #     state (True if methylated)
+    #     """
+    #     met_str = self._get_met_str(a)
+    #     for i, m in enumerate(met_str):
+    #         if m in 'zZ':
+    #             locus = get_ref_position(i, a.reference_start, a.cigartuples)
+    #
+    #             if locus is None:
+    #                 continue
+    #             locus += 1
+    #             yield locus, m == 'Z'
 
     def no_non_cpg(self) -> bool:
         """look for forbidden methylation states.
