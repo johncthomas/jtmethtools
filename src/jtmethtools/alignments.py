@@ -268,7 +268,7 @@ def count_alignment_error(max_errors:int|None=1000):
     global ALIGNMENT_ERROR_COUNT
 
     ALIGNMENT_ERROR_COUNT += 1
-    if max_errors is not None and (ALIGNMENT_ERROR_COUNT > max_errors):
+    if (max_errors is not None) and (ALIGNMENT_ERROR_COUNT > max_errors):
         raise AlignmentFileFailure(
             f"Too many errors detected in alignment files ({max_errors=}). "
             "Stopping processing on the assumption something is wrong and to avoid "
@@ -335,23 +335,23 @@ class Alignment:
 
         empty_return =  LocusValues({}, {}, {})
         if not self.has_metstr():
-            count_alignment_error()
             logger.warning(
                 f"Can't determine metstr for alignment of {self.a.query_name}, skipping."
             )
+            count_alignment_error()
             return empty_return
 
         for segment in (self.a, self.a2):
             if segment is None:
                 continue
             # this is assuming that we're ignoring all indels. If that changes this breaks.
-            align_len = sum([x[1] for x in segment.cigartuples if x[0] == 0])
+            align_len = sum([x[1] for x in segment.cigartuples if x[0] in {0, 1, 7, 8}])
             metstr_len = len(get_bismark_met_str(segment))
             if align_len != metstr_len:
-                count_alignment_error()
                 logger.warning(
                     f"Length mismatch of methylation string for alignment of {self.a.query_name}, skipping"
                 )
+                count_alignment_error()
                 return empty_return
 
         if self.a2 is None:
