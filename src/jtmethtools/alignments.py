@@ -344,7 +344,7 @@ class Alignment:
         for segment in (self.a, self.a2):
             if segment is None:
                 continue
-            # this is assuming that we're ignoring all indels. If that changes this breaks.
+
             align_len = sum([x[1] for x in segment.cigartuples if x[0] in {0, 1, 7, 8}])
             metstr_len = len(get_bismark_met_str(segment))
             if align_len != metstr_len:
