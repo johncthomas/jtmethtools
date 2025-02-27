@@ -268,7 +268,7 @@ def count_alignment_error(max_errors:int|None=1000):
     global ALIGNMENT_ERROR_COUNT
 
     ALIGNMENT_ERROR_COUNT += 1
-    if max_errors is not None and (ALIGNMENT_ERROR_COUNT > max_errors):
+    if (max_errors is not None) and (ALIGNMENT_ERROR_COUNT > max_errors):
         raise AlignmentFileFailure(
             f"Too many errors detected in alignment files ({max_errors=}). "
             "Stopping processing on the assumption something is wrong and to avoid "
@@ -335,23 +335,23 @@ class Alignment:
 
         empty_return =  LocusValues({}, {}, {})
         if not self.has_metstr():
-            count_alignment_error()
             logger.warning(
                 f"Can't determine metstr for alignment of {self.a.query_name}, skipping."
             )
+            count_alignment_error()
             return empty_return
 
         for segment in (self.a, self.a2):
             if segment is None:
                 continue
-            # this is assuming that we're ignoring all indels. If that changes this breaks.
-            align_len = sum([x[1] for x in segment.cigartuples if x[0] == 0])
+
+            align_len = sum([x[1] for x in segment.cigartuples if x[0] in {0, 1, 7, 8}])
             metstr_len = len(get_bismark_met_str(segment))
             if align_len != metstr_len:
-                count_alignment_error()
                 logger.warning(
                     f"Length mismatch of methylation string for alignment of {self.a.query_name}, skipping"
                 )
+                count_alignment_error()
                 return empty_return
 
         if self.a2 is None:
@@ -493,20 +493,20 @@ class Alignment:
                 minmax = max
             return minmax(self.a.mapping_quality, self.a2.mapping_quality)
 
-    def _iter_locus_metstr_bismark(self, a: AlignedSegment) -> Tuple[int, bool]:
-        """Iterate through the bismark methylation string, yielding
-        the chromosomal position of current CpG and it's methylation
-        state (True if methylated)
-        """
-        met_str = self._get_met_str(a)
-        for i, m in enumerate(met_str):
-            if m in 'zZ':
-                locus = get_ref_position(i, a.reference_start, a.cigartuples)
-
-                if locus is None:
-                    continue
-                locus += 1
-                yield locus, m == 'Z'
+    # def _iter_locus_metstr_bismark(self, a: AlignedSegment) -> Tuple[int, bool]:
+    #     """Iterate through the bismark methylation string, yielding
+    #     the chromosomal position of current CpG and it's methylation
+    #     state (True if methylated)
+    #     """
+    #     met_str = self._get_met_str(a)
+    #     for i, m in enumerate(met_str):
+    #         if m in 'zZ':
+    #             locus = get_ref_position(i, a.reference_start, a.cigartuples)
+    #
+    #             if locus is None:
+    #                 continue
+    #             locus += 1
+    #             yield locus, m == 'Z'
 
     def no_non_cpg(self) -> bool:
         """look for forbidden methylation states.
@@ -637,3 +637,17 @@ def iter_bam(
     for aln in iter_bam_segments(bam, paired_end):
         yield Alignment(*aln, kind=kind)
     return None
+
+# def ttest():
+#     i = 0
+#     logger.add(print, level='WARNING')
+#     for a in iter_bam('/home/jcthomas/OneDrive/DevLab/NIMBUS/Data/test/2025-02-03/SLX-22290.CMDL22001978_control_methylome.r_1_val_1_GRCh38_bismark_bt2_pe.deduplicated_sorted.bam'):
+#         i+=1
+#         try:
+#             x = a.metstr
+#         except:
+#             print(i, 'alignments without failing')
+#             raise
+# if __name__ == '__main__':
+#     ttest()
+
