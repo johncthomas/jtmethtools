@@ -29,7 +29,7 @@ def set_logger(min_level='DEBUG'):
 SplitTable = dict[str, pd.DataFrame]
 
 
-def fasta_to_dict(fn: str, full_desc=False) -> dict[str, str]:
+def fasta_to_dict(fn: str|Path, full_desc=False) -> dict[str, str]:
     """Dict that maps record_name->sequence.
 
     By default splits the description on the first space, this should
