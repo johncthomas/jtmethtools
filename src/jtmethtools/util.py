@@ -47,7 +47,7 @@ def fasta_to_dict(fn: str|Path, full_desc=False) -> dict[str, str]:
             if chrm is not None:
                 genome[chrm] = ''.join(nt)
             chrm = line[1:]
-            if full_desc:
+            if not full_desc:
                 chrm = line[1:].split()[0]
             nt = []
         else:
