@@ -15,7 +15,9 @@ dependencies = [
     "attrs",
     "pytest",
     "pyarrow==18.1",
-    "psutil"
+    "psutil",
+    "matplotlib==3.10",
+    "datargs"
 ]
 
 [tool.setuptools.packages.find]
