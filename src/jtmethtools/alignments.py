@@ -230,36 +230,36 @@ def get_alignment_of_read(readname:str, bamfn:str) -> (AlignedSegment, AlignedSe
         return tuple(aligns)
 
 
-@lru_cache(1024)
-def get_ref_position(seq_i, ref_start, cigar):
-    """Get the reference locus, taking insertions/deletions into account"""
-    ref_pos = ref_start
-    seq_pos = 0
-
-    for (cigar_op, cigar_len) in cigar:
-        if cigar_op in (0, 7, 8):  # M, =, X: consume both ref and query
-            if seq_pos + cigar_len > seq_i:
-                return ref_pos + (seq_i - seq_pos)
-            seq_pos += cigar_len
-            ref_pos += cigar_len
-        elif cigar_op == 1:  # I: consume query only
-            if seq_pos + cigar_len > seq_i:
-                return None  # insertion before current position
-            seq_pos += cigar_len
-        elif cigar_op == 2:  # D: consume ref only
-            ref_pos += cigar_len
-        elif cigar_op == 3:  # N: skip region (introns typically)
-            ref_pos += cigar_len
-        elif cigar_op == 4:  # S: soft clipping, consume query only
-            if seq_pos + cigar_len > seq_i:
-                return None  # soft clip before current position
-            seq_pos += cigar_len
-        elif cigar_op == 5:  # H: hard clipping, consume nothing
-            continue
-        elif cigar_op == 6:  # P: padding, consume neither
-            continue
-
-    return None  # position not reached, or it's past the alignment
+# @lru_cache(1024)
+# def get_ref_position(seq_i, ref_start, cigar):
+#     """Get the reference locus, taking insertions/deletions into account"""
+#     ref_pos = ref_start
+#     seq_pos = 0
+#
+#     for (cigar_op, cigar_len) in cigar:
+#         if cigar_op in (0, 7, 8):  # M, =, X: consume both ref and query
+#             if seq_pos + cigar_len > seq_i:
+#                 return ref_pos + (seq_i - seq_pos)
+#             seq_pos += cigar_len
+#             ref_pos += cigar_len
+#         elif cigar_op == 1:  # I: consume query only
+#             if seq_pos + cigar_len > seq_i:
+#                 return None  # insertion before current position
+#             seq_pos += cigar_len
+#         elif cigar_op == 2:  # D: consume ref only
+#             ref_pos += cigar_len
+#         elif cigar_op == 3:  # N: skip region (introns typically)
+#             ref_pos += cigar_len
+#         elif cigar_op == 4:  # S: soft clipping, consume query only
+#             if seq_pos + cigar_len > seq_i:
+#                 return None  # soft clip before current position
+#             seq_pos += cigar_len
+#         elif cigar_op == 5:  # H: hard clipping, consume nothing
+#             continue
+#         elif cigar_op == 6:  # P: padding, consume neither
+#             continue
+#
+#     return None  # position not reached, or it's past the alignment
 
 class AlignmentFileFailure(Exception):
     pass
