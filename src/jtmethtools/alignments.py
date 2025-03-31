@@ -282,6 +282,7 @@ class LocusValues:
     methylations:dict[int, str]
     qualities:dict[int, int]
     nucleotides:dict[int, str]
+    is_good:bool = True
 
 @define(frozen=True)
 class Alignment:
@@ -333,7 +334,7 @@ class Alignment:
             https://github.com/harvardinformatics/NGmerge
         """
 
-        empty_return =  LocusValues({}, {}, {})
+        empty_return =  LocusValues({}, {}, {}, is_good=False)
         if not self.has_metstr():
             logger.warning(
                 f"Can't determine metstr for alignment of {self.a.query_name}, skipping."
@@ -347,9 +348,12 @@ class Alignment:
 
             align_len = sum([x[1] for x in segment.cigartuples if x[0] in {0, 1, 7, 8}])
             metstr_len = len(get_bismark_met_str(segment))
-            if align_len != metstr_len:
+            phred_len = len(segment.query_qualities)
+            nt_len = len(segment.query_sequence)
+            if not (align_len == metstr_len == phred_len == nt_len):
                 logger.warning(
-                    f"Length mismatch of methylation string for alignment of {self.a.query_name}, skipping"
+                    f"Length mismatch of methylation string for alignment of {self.a.query_name}, skipping.\n"
+                    f"({align_len=}, {metstr_len=}, {phred_len=}, {nt_len=} {segment.cigartuples=}, {self.filename=})"
                 )
                 count_alignment_error()
                 return empty_return
