@@ -356,10 +356,10 @@ class Alignment:
 
         if self.a2 is None:
             phreds, methylations, nucleotides = {}, {}, {}
-            for r_pos, l_pos in self.a.get_aligned_pairs(matches_only=True):
-                phreds[l_pos] = self.a.query_qualities[r_pos]
-                nucleotides[l_pos] = self.a.query_sequence[r_pos]
-                methylations[l_pos] = self._get_met_str(self.a)[r_pos]
+            for q_pos, r_pos in self.a.get_aligned_pairs(matches_only=True):
+                phreds[r_pos] = self.a.query_qualities[q_pos]
+                nucleotides[r_pos] = self.a.query_sequence[q_pos]
+                methylations[r_pos] = self._get_met_str(self.a)[q_pos]
         else: # it's a paired alignment
             if self.use_quality_profile:
                 from jtmethtools.quality_profiles import quality_profile_match_41, quality_profile_mismatch_41
