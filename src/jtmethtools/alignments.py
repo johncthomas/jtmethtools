@@ -370,15 +370,15 @@ class Alignment:
             else:
                 quality_profile_match_41, quality_profile_mismatch_41 = None, None
 
-            # .aligned_pairs is read position->reference locus
-            # a1_loc_pos, a2_loc_pos = [
-            #     {r: q for (q, r) in ap if (q is not None) and (r is not None)}
-            #     for ap in (self.a.aligned_pairs, self.a2.aligned_pairs)
-            # ]
+            # .aligned_pairs is reference position->read locus
             a1_loc_pos, a2_loc_pos = [
-                dict(aln.get_aligned_pairs(matches_only=True))
-                for aln in (self.a, self.a2)
+                {r: q for (q, r) in ap if (q is not None) and (r is not None)}
+                for ap in (self.a.get_aligned_pairs(), self.a2.get_aligned_pairs())
             ]
+            # a1_loc_pos, a2_loc_pos = [
+            #     dict(aln.get_aligned_pairs(matches_only=True))
+            #     for aln in (self.a, self.a2)
+            # ]
 
             a1_loc = set(a1_loc_pos.keys())
             a2_loc = set(a2_loc_pos.keys())
