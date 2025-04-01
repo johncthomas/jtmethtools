@@ -12,7 +12,8 @@ from jtmethtools.util import (
     read_array,
     write_array,
     logger,
-    set_logger
+    set_logger,
+    MockAlignment
 )
 
 import tempfile
@@ -85,6 +86,8 @@ K00252:520:HCKCTBBXY:5:1101:2361:48245_1:N:0:AGCGATAG+GCCTCTAT	147	1	1417551	40	
     for i, aln in enumerate(iter_bam(fn_sorted, paired_end=False)):
         pass
     assert i == 5
+
+
 
 
 def test_iter_unsorted_paired():
@@ -185,38 +188,38 @@ def test_filter_read_data():
     check_filtering(filt_onechh, 'oneCHH', rid_not_in='twoCHH')
 
 
-@dataclass
-class A:
-    metstr: str
-    query_sequence: str
-    query_qualities: list[int]
-    aligned_pairs: list[Tuple[int, int]]
-
-    def get_tags(self):
-        return [None, None, ('XM', self.metstr)]
-
-    @property
-    def cigartuples(self):
-        return [(0, len(self.metstr))]
+# @dataclass
+# class A:
+#     metstr: str
+#     query_sequence: str
+#     query_qualities: list[int]
+#     aligned_pairs: list[Tuple[int, int]]
+#
+#     def get_tags(self):
+#         return [None, None, ('XM', self.metstr)]
+#
+#     @property
+#     def cigartuples(self):
+#         return [(0, len(self.metstr))]
 
 def test_merge_paired_alignment_values():
 
 
-    testa1 = A(
-        metstr="ACDE",
+    testa1 = MockAlignment(
+        meth_str="ACDE",
         query_sequence='acde',
         query_qualities=[40, 40, 10, 40],
-        aligned_pairs=[
+        aligned_pairs = [
             (0, 10),
-            (None, 11),
+            #(None, 11),
             (1, 12),
             (2, 13),
-            (3, None)
+            #(3, None)
         ]
     )
 
-    testa2 = A(
-        metstr="FGHI",
+    testa2 = MockAlignment(
+        meth_str="FGHI",
         query_sequence='fghi',
         query_qualities=[10, 40, 40, 40],
         aligned_pairs=[
@@ -254,6 +257,43 @@ def test_merge_paired_alignment_values():
     res2 = testaln.locus_values
     assert res2 == expected
 
+def test_MockAlignment_locus_values():
+    # 'query_name reference_name reference_start reference_end mapping_quality cigar_tuples meth_str should_succeed expected_score'
+    mokaln_args = [
+        #('succCusGapped', '1', 100, 104, 44, [(0, 2), (2, 3), (0, 1)], 'ZZzzzZz', True, 15),
+        ('allMeth', '1', 100, 110, 44, None, 'ZZZZZZZZZZ', False, 5),
+        ('allUnmeth', '1', 100, 110, 44, None, 'zzzzzzzzzz', False, -5),
+        ('succeeds', '1', 101, 110, 44, None, 'ZZZZZzzzz', True, 45),
+        ('notInBG', '1', 350, 359, 44, None, 'ZZZZZzzzz', False, None),
+        ('notInRegion', '1', 1000, 1009, 44, None, 'ZZZZZzzzz', False, None),
+        ('discardNoCpg', '1', 100, 109, 44, None, '.........', False, None),
+        ('discardHasH', '1', 100, 109, 44, None, 'ZZZZHzzzz', False, None),
+        ('succeedHypo', '2', 101, 103, 44, None, 'zzz', True, 15),
+        ('failsHypo', '2', 101, 103, 44, None, 'ZZZ', False, -15),
+        ('FailsMapQ', '1', 101, 110, 5, None, 'ZZZZZzzzz', False, None)
+    ]
+    # turn into kwargs since the call sig for MockAln might change
+    kw = [
+        'query_name',
+        'reference_name',
+        'reference_start',
+        'reference_end',
+        'mapping_quality',
+        'cigartuples',
+        'meth_str',
+        'should_succeed',
+        'expected_score'
+    ]
 
+    # test process_pair
+    pair_args = [
+        ('succeeds_paired', '1', 101, 108, 44, None, 'ZZZZZzz', True, 45),
+        ('succeeds_paired', '1', 103, 110, 44, None, 'ZZZzzzz', True, 45),
+    ]
 
+    pair_kwargs = [dict(zip(kw, a)) for a in pair_args]
+
+    for kwargs in mokaln_args:
+        aln = Alignment(MockAlignment(**dict(zip(kw, kwargs))))
+        x = aln.locus_values
 

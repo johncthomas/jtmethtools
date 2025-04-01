@@ -15,6 +15,8 @@ import json
 from loguru import logger
 logger.remove()
 
+from attrs import define
+
 def set_logger(min_level='DEBUG'):
 
     logger.remove()
@@ -168,3 +170,56 @@ def read_array(file: str|Path|typing.IO,
 
     return array, metadata
 
+@define(slots=False)
+class MockAlignment:
+    query_name: str = 'test'
+    reference_name: str = '1'
+    reference_start: int = 100
+    _reference_end: int = None
+    mapping_quality: int = 44
+    _cigartuples: list[tuple[int, int]] = None
+    _query_qualities: list[int] = None
+    _query_sequence: str = None
+    _aligned_pairs: list[tuple[int, int]] = None
+    meth_str: str = 'x.ZzZ.u.h.'
+
+    should_succeed: bool = True
+    expected_score: float = np.nan
+
+    def get_tags(self):
+        return (None, None, ('XM', self.meth_str))
+
+    @property
+    def cigartuples(self):
+        if self._cigartuples is None:
+            return  [(0, len(self.meth_str))]
+        else:
+            return self._cigartuples
+
+    def get_aligned_pairs(self, matches_only=True):
+        if self._aligned_pairs is not None:
+            return self._aligned_pairs
+        if len(self.cigartuples) != 1:
+            raise NotImplementedError("MockAlignment can't deal with indels")
+        return [(i,locus) for i, locus in enumerate(range(self.reference_start, self.reference_end))]
+
+    @property
+    def query_qualities(self):
+        if self._query_qualities is None:
+            return [41 for _ in self.meth_str]
+        else:
+            return self._query_qualities
+
+    @property
+    def query_sequence(self):
+        if self._query_sequence is None:
+            return ''.join(['N' for _ in self.meth_str])
+        else:
+            return self._query_sequence
+
+    @property
+    def reference_end(self):
+        if self._reference_end is None:
+            return self.reference_start + len(self.meth_str)
+        else:
+            return self._reference_end
