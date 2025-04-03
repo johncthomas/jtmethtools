@@ -7,6 +7,7 @@ from dataclasses import field
 import matplotlib.pyplot as plt
 import pysam
 import pandas as pd
+import pyarrow as pa
 import numpy as np
 import numpy.typing as npt
 import datargs
@@ -44,7 +45,7 @@ def iter_alignments(bamfn, only_cannon_chrm) -> Iterator[pysam.AlignedSegment]:
             yield a
 
 
-def get_table(bamfn, only_cannonical_chrm=False) -> npt.NDArray[np.uint32]:
+def get_table_np(bamfn, only_cannonical_chrm=False) -> npt.NDArray[np.uint32]:
     """Generate table of per-read methylation stats from a Bismark BAM."""
     i = 0
     for i, _ in enumerate(iter_alignments(bamfn, only_cannonical_chrm)):
@@ -82,19 +83,98 @@ def get_table(bamfn, only_cannonical_chrm=False) -> npt.NDArray[np.uint32]:
     return table
 
 
-def plot_len_pmet(table:npt.NDArray) -> None:
-    """Plot read length vs methylation status."""
-    m = table[:, COLI['FreqC']] > 0
-    x = table[m, COLI['Length']]
-    y = table[m, COLI['Met']] / table[m, COLI['FreqC']]
+def get_table(bamfn, only_cannonical_chrm=False) -> pd.DataFrame:
+    """Generate table of per-read methylation stats from a Bismark BAM."""
+    i = 0
+    for i, _ in enumerate(iter_alignments(bamfn, only_cannonical_chrm)):
+        pass
+    total_alignments = i+1
+    # Preallocate a dictionary of numpy arrays (one per column).
+    # Adjust the list of columns as needed.
+    columns = ['Chrm', 'Start', 'Length', 'H', 'X', 'U', 'Z',
+               'h', 'x', 'u', 'z', 'FreqC', 'Met', 'NotC']
+    data_dict = {col: np.zeros(total_alignments, dtype=np.uint32) for col in columns}
 
-    plt.figure(figsize=(4 ,4))
-    plt.hexbin(x, y, bins='log', gridsize=50)
+    # Second pass: populate arrays for each alignment
+    for i, a in enumerate(iter_alignments(bamfn, only_cannonical_chrm)):
+        ln = a.query_length
+        metstr = get_bismark_met_str(a)
+
+        # Static fields
+        data_dict['Chrm'][i] = CHRM_MAP[a.reference_name]
+        data_dict['Start'][i] = a.query_alignment_start
+        data_dict['Length'][i] = ln
+
+        # Count glyphs in the methylation string.
+        c = Counter(metstr)
+        # Rename '.' to 'NotC'
+        c['NotC'] = c.get('.', 0)
+        if '.' in c:
+            del c['.']
+
+        # For each key from the counter that matches one of our columns, set the value.
+        for key, v in c.items():
+            if key in data_dict:
+                data_dict[key][i] = v
+        # (Any columns not updated remain at 0.)
+
+    # Compute derived columns FreqC and Met.
+    # Define which keys to sum over for each derived column.
+    freqc_keys = ['H', 'X', 'U', 'Z', 'h', 'x', 'u', 'z']
+    met_keys = ['H', 'X', 'Z', 'U']
+
+    # Sum across the selected keys, vectorized.
+    data_dict['FreqC'] = sum(data_dict[key] for key in freqc_keys)
+    data_dict['Met'] = sum(data_dict[key] for key in met_keys)
+
+    # Convert each numpy array to a pyarrow array.
+    # Zero-copy is achieved for many numeric types.
+    arrow_dict = {col: pa.array(arr) for col, arr in data_dict.items()}
+
+    # convert to arrow backed DF.
+    table = pa.table(arrow_dict)
+    df = table.to_pandas(types_mapper=pd.ArrowDtype, self_destruct=True)
+
+    return df
+
+def plot_len_pmet(readstats:pd.DataFrame, exclude_CH=False,
+                  legend=True, hexbin=True) -> None:
+    """Plot read length vs methylation status."""
+    readstats.loc[:, 'MetFraction'] = readstats.Met / readstats.FreqC
+    if exclude_CH:
+        ch_met = (readstats.H > 0) | (readstats.X > 0) | (readstats.U > 0)
+        rs = readstats.loc[~ch_met]
+    else:
+        rs = readstats
+
+    x, y = rs.Length.values, rs.MetFraction.values * 100
+    plt.figure(figsize=(4, 4))
+    if hexbin:
+        plt.hexbin(x, y, bins='log', gridsize=25)
+        lc='lightblue'
+    else:
+        lc = 'black'
     plt.xlabel('Read Length (BP)')
     plt.ylabel('Methylation %')
-    plt.colorbar(label='log10(count)')
+    # plt.colorbar(label='log(count)')
     plt.title('Read Length vs Methylation %')
+    chunk_w = 10
 
+    for q, ls in ((0.5, ':'), (0.75, '--'), (0.95, '-')):
+        qx, qy = [], []
+        for chunk_n in range(150 // chunk_w + 1):
+            # we're ignore reads of length 1 in exchange for putting length 141-150 into one bucket
+            start = chunk_n * chunk_w
+            end = (chunk_n + 1) * chunk_w
+            m = (rs.Length > start) & (rs.Length <= end)
+
+            med = rs.loc[m, 'MetFraction'].quantile(q)
+            qx.append(end)
+            qy.append(med)
+        qy = [y * 100 if not pd.isna(y) else 0 for y in qy]
+        plt.plot(qx, qy, label=str(q), c=lc, ls=ls, lw=3)
+    if legend:
+        plt.legend(title='Quantile', fontsize='xx-small', loc='upper left', bbox_to_anchor=(1, 1))
 
 
 def run(bamfn, out_prefix, do_plot, write_table, cannon_chrm):
@@ -115,15 +195,18 @@ def run(bamfn, out_prefix, do_plot, write_table, cannon_chrm):
         )
 
     if write_table:
-        write_array(
-            table,
-            str(out_prefix)+'.read-stats.arr.gz',
-            additional_metadata={
-                'columns': COLUMNS,
-                'description': "Read stats from Bismark BAM.",
-                'bamfn': str(bamfn),
-            }
+        table.to_parquet(
+            str(out_prefix)+'.read-stats.parquet',
         )
+        # write_array(
+        #     table,
+        #     str(out_prefix)+'.read-stats.arr.gz',
+        #     additional_metadata={
+        #         'columns': COLUMNS,
+        #         'description': "Read stats from Bismark BAM.",
+        #         'bamfn': str(bamfn),
+        #     }
+        # )
 
 
 def ttest():
@@ -144,9 +227,8 @@ n3	2	allCpG	1	42	10M	*	0	10	NNNNNNNNNN	ABCDEFGHIJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:...
             f.write(test_sam)
         # run main
         run(samfn, tmpdir / 'test', True, True, cannon_chrm=False)
-        table, metadat = read_array(tmpdir/'test.read-stats.arr.gz')
-        df = pd.DataFrame(table, columns=COLUMNS)
-        print(df)
+        df = pd.read_parquet(tmpdir/'test.read-stats.parquet')
+
         # check some numbers in df
         assert df.loc[0, 'FreqC'] == 8
         assert df.loc[0, 'Met'] == 4
@@ -203,6 +285,6 @@ def cli():
     )
 
 if __name__ == '__main__':
-    print('Running test.')
-    ttest()
+    # print('Running test.')
+    # ttest()
     cli()
