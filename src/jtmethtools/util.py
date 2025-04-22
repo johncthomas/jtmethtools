@@ -54,7 +54,26 @@ def fasta_to_dict(fn: str|Path, full_desc=False) -> dict[str, str]:
             nt.append(line.upper())
     return genome
 
+@define
+class Genome:
+    sequences: dict[str, str]
+    filename: str|Path = None
 
+    def harmonise_chrm_names(self):
+        """add chr to chromosome names that don't have it, and remove it from them that do"""
+
+        for k in self.sequences.keys():
+            if k.startswith('chr'):
+                self.sequences[k[3:]] = self.sequences[k]
+            else:
+                self.sequences['chr' + k] = self.sequences[k]
+
+    @classmethod
+    def from_fasta(cls, fn: str|Path, full_desc=False) -> Self:
+        """Load a fasta file into a Genome object"""
+        genome = cls(fasta_to_dict(fn, full_desc=full_desc))
+        genome.filename = fn
+        return genome
 
 def load_bismark_calls_table(fn) -> pd.DataFrame:
     df = pd.read_csv(fn, sep='\t', header=None, dtype={2: str})
