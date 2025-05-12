@@ -1,5 +1,7 @@
 venv/
 .venv/
 .python-version
-.idea
+.idea/
 uv.lock
+.*
+.*/
