@@ -1,111 +1,24 @@
-import typing
-from typing import Collection, Tuple, Literal, Self, Iterable, Union
-from numpy.typing import NDArray
+from typing import Collection, Tuple, Literal, Iterable
 
 import pandas as pd
 import numpy as np
 import pysam
 from loguru import logger
 from pysam import AlignedSegment, AlignmentFile, AlignmentHeader
-from attrs import define, field
-from functools import cached_property, lru_cache
-from collections import namedtuple
+from attrs import define
+from functools import cached_property
+
+from jtmethtools.classes import Regions
+
 logger.remove()
 
 SplitTable = dict[str, pd.DataFrame]
-
-from jtmethtools.util import (
-    load_region_bed,
-    split_table_by_chrm,
-)
 
 from pathlib import Path
 
 Pathy = str|Path
 
 ALIGNMENT_ERROR_COUNT = 0
-
-@define(slots=True)
-class LociRange:
-    start:int
-    end:int
-    chrm:str
-    name:str=None
-
-    def to_kwargs(self):
-        """dict with keys chrm, start, end."""
-        return dict(chrm=self.chrm, start=self.start, end=self.end)
-
-    def to_tuple(self):
-        """Returns: (start, end, chrm)"""
-        return (self.start, self.end, self.chrm)
-
-
-@define
-class Regions:
-    """Region starts, ends and names stored in vectors
-    as attributes of the same names.
-
-    Create using Regions.from_file or .from_df
-    """
-    starts: dict[str, NDArray[int]]
-    ends: dict[str, NDArray[int]]
-    names: dict[str, NDArray[str]]
-    df: pd.DataFrame = None
-
-    def iter(self) -> typing.Iterable[LociRange]:
-        for _, row in self.df.iterrows():
-            yield LociRange(
-                start=row.Start,
-                end=row.End,
-                chrm=row.Chrm,
-                name=row.Name
-            )
-
-    @cached_property
-    def chromsomes(self) -> set[str]:
-        return set(self.df.Chrm.unique())
-
-    @classmethod
-    def from_file(cls, filename: Pathy) -> Self:
-        filename = str(filename)
-        if filename.endswith('.bed') or filename.endswith('.txt'):
-            return cls.from_bed(filename)
-        df = pd.read_csv(filename, sep='\t', dtype={'Chrm':str})
-        df.set_index( 'Name', inplace=True, drop=False)
-        return (cls.from_df(df))
-
-
-    @classmethod
-    def from_bed(cls, filename: Pathy) -> Self:
-        df = load_region_bed(filename)
-        return cls.from_df(df)
-
-    @classmethod
-    def from_df(cls, df: pd.DataFrame) -> Self:
-        sdf = split_table_by_chrm(df)
-
-        return cls(
-            starts={k: sdf[k].Start.values for k in sdf},
-            ends={k: sdf[k].End.values for k in sdf},
-            names={k: sdf[k].Name.values for k in sdf},
-            df=df
-        )
-
-    def starts_ends_of_chrm(self, chrm) -> (NDArray[int], NDArray[int]):
-        return (self.starts[chrm], self.ends[chrm])
-
-    def region_at_locus(self, chrm:str, locus:int, missing_value=False) \
-            -> Union[str,False]:
-        """Return region name at locus. Does not check for overlapping regions.
-        Return `missing_value` if no region hit."""
-        if chrm not in self.chromsomes:
-            return missing_value
-        m = (locus >= self.starts[chrm]) & (locus < self.ends[chrm])
-        if any(m):
-            return self.names[chrm][m][0]
-        else:
-            return missing_value
 
 
 def alignment_overlaps_region(
@@ -296,6 +209,8 @@ class Alignment:
     def _get_met_str(self, a:AlignedSegment):
         if self.kind == 'bismark':
             return get_bismark_met_str(a)
+        else:
+            raise NotImplementedError("Only bismark alignments are currently supported.")
 
 
     def has_metstr(self):
@@ -444,9 +359,10 @@ class Alignment:
 
         return LocusValues(qualities=phreds, nucleotides=nucleotides, methylations=methylations)
 
-    def merge(self) -> Self:
-        if self.a2 is None:
-            return self
+    # def merge(self) -> Self:
+    #     if self.a2 is None:
+    #         return self
+    #
 
     @property
     def locus_methylation(self) -> dict[int, str]:
@@ -529,7 +445,7 @@ class Alignment:
             return False
         return True
 
-    def get_hit_regions(self, regions:Regions) -> list[str]:
+    def get_hit_regions(self, regions: Regions) -> list[str]:
         regions = [alignment_overlaps_region(a, regions)
                    for a in self.alignments]
         regions = list(set([r for r in regions if r]))

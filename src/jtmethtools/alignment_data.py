@@ -29,9 +29,9 @@ from attrs import define
 from jtmethtools.alignments import (
     Alignment,
     iter_bam,
-    Regions,
-    LociRange
 )
+
+from jtmethtools.classes import *
 
 from jtmethtools.util import (
     logger

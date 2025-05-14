@@ -1,16 +1,16 @@
 import typing
 from pathlib import Path
-from typing import Collection, Tuple, Self
+
 import tarfile
 
 import tempfile
 
 import pandas as pd
 import numpy as np
-import numpy.typing as npt
 from numpy.typing import NDArray
 
-import pysam
+from typing import Tuple
+
 import json
 from loguru import logger
 logger.remove()
@@ -27,6 +27,10 @@ def set_logger(min_level='DEBUG'):
 
 
 type SplitTable = dict[str, pd.DataFrame]
+
+CANNONICAL_CHRM = [str(i) for i in range(1, 13)] + ['X', 'Y']
+CANNONICAL_CHRM += ['chr' + c for c in CANNONICAL_CHRM]
+CANNONICAL_CHRM = set(CANNONICAL_CHRM)
 
 
 def fasta_to_dict(fn: str|Path, full_desc=False) -> dict[str, str]:
@@ -54,26 +58,6 @@ def fasta_to_dict(fn: str|Path, full_desc=False) -> dict[str, str]:
             nt.append(line.upper())
     return genome
 
-@define
-class Genome:
-    sequences: dict[str, str]
-    filename: str|Path = None
-
-    def harmonise_chrm_names(self):
-        """add chr to chromosome names that don't have it, and remove it from them that do"""
-
-        for k in self.sequences.keys():
-            if k.startswith('chr'):
-                self.sequences[k[3:]] = self.sequences[k]
-            else:
-                self.sequences['chr' + k] = self.sequences[k]
-
-    @classmethod
-    def from_fasta(cls, fn: str|Path, full_desc=False) -> Self:
-        """Load a fasta file into a Genome object"""
-        genome = cls(fasta_to_dict(fn, full_desc=full_desc))
-        genome.filename = fn
-        return genome
 
 def load_bismark_calls_table(fn) -> pd.DataFrame:
     df = pd.read_csv(fn, sep='\t', header=None, dtype={2: str})

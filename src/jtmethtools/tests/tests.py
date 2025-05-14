@@ -18,15 +18,12 @@ from jtmethtools.util import (
 
 import tempfile
 
-from jtmethtools import alignment_data
+from jtmethtools import alignment_data, CpGIndex, filter_cpg_index_by_regions
 
 from jtmethtools.alignments import *
 
 logger.remove()
 #set_logger('TRACE',)
-
-TESTDIR = Path(os.path.dirname(__file__))
-
 samstr = """@HD	VN:1.0	SO:none
 @SQ	SN:1	LN:248956422
 mapq20Unorder	18	1	100	20	10M	*	0	10	TTTTTTTTTT	JJJJJJJJJJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:hhhhhhhhhh
@@ -46,14 +43,17 @@ oneCHH\t2\t1\t104\t22\t10M\t*\t0\t10\tTTCTTTTTTT\tABCDEFGHIJ\tNM:i:tag0\tMD:Z:ta
 twoCHH\t2\t1\t104\t22\t10M\t*\t0\t10\tTTCTTCTTTT\tABCDEFGHIJ\tNM:i:tag0\tMD:Z:tag1\tXM:Z:..H..H....
 """
 
-fn_test_bam = TESTDIR / 'img-test.sam'
-with open(fn_test_bam, 'w') as f:
-    f.write(samstr)
+def test_create_tmp_files(tmp_path:Path):
 
-fn_test_regions = TESTDIR/'regions.tsv'
-with open(fn_test_regions, 'w') as f:
-    f.write("Name	Chrm	Start	End	Threshold	Direction\n")
-    f.write("test1\t1\t90\t110\t0\n")
+
+    fn_test_bam = tmp_path / 'img-test.sam'
+    with open(fn_test_bam, 'w') as f:
+        f.write(samstr)
+
+    fn_test_regions = TESTDIR/'regions.tsv'
+    with open(fn_test_regions, 'w') as f:
+        f.write("Name	Chrm	Start	End	Threshold	Direction\n")
+        f.write("test1\t1\t90\t110\t0\n")
 
 read_data = alignment_data.process_bam(
     fn_test_bam,
@@ -297,3 +297,27 @@ def test_MockAlignment_locus_values():
         aln = Alignment(MockAlignment(**dict(zip(kw, kwargs))))
         x = aln.locus_values
 
+def test_filter_cpg_index_by_regions():
+    start_idx = CpGIndex(
+        {'1': {1: 0, 10: 1, 100: 2}, '2': {2: 0, 20: 1, 200: 2}}
+    )
+    assert start_idx.n_cpg == 6
+    regions = Regions.from_df(
+        pd.DataFrame({
+            'Start':[50, 100],
+            'End':[200, 300],
+            'Chrm':['1', '2'],
+            'Name':['end1', 'end2'],
+        })
+    )
+
+    filt_idx = filter_cpg_index_by_regions(start_idx, regions)
+    assert filt_idx.n_cpg == 2
+    cols =  filt_idx.to_columns()
+    assert list(cols['Chrm']) == ['1', '2']
+    assert list(cols['Locus']) == [100, 200]
+    assert filt_idx.region_names == ['end1', 'end2']
+
+# remove TESTDIR
+import shutil
+shutil.rmtree(TESTDIR)

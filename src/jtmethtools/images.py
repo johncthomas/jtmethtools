@@ -9,7 +9,8 @@ from attrs import define
 from jtmethtools.alignment_data import (
     TruePA, COLS_READ, PositionArray, Pathesque, AlignmentsData, \
     PAD_READID, NT_CODES, BISMARK_CODES, sampledown_rows, process_bam)
-from jtmethtools.alignments import LociRange, Regions
+from jtmethtools.alignments import Regions
+from jtmethtools.classes import LociRange
 from jtmethtools.util import write_array, read_array
 from loguru import logger
 from numpy.typing import NDArray
