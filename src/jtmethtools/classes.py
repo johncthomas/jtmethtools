@@ -70,7 +70,6 @@ class Regions:
         if filename.endswith('.bed') or filename.endswith('.txt'):
             return cls.from_bed(filename)
         df = pd.read_csv(filename, sep='\t', dtype={'Chrm':str})
-        df.set_index( 'Name', inplace=True, drop=False)
         return (cls.from_df(df))
 
 
@@ -82,6 +81,7 @@ class Regions:
     @classmethod
     def from_df(cls, df: pd.DataFrame) -> Self:
         """Expects columns Start, End, Name & Chrm."""
+        df.set_index('Name', inplace=True, drop=False)
         sdf = split_table_by_chrm(df)
 
         return cls(
