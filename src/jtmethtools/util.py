@@ -226,3 +226,139 @@ class MockAlignment:
             return self.reference_start + len(self.meth_str)
         else:
             return self._reference_end
+
+
+import random
+import string
+
+nt_meth_mapper = dict()
+nts = 'ACTG'
+for nt1 in nts:
+    for nt2 in nts:
+        nt_meth_mapper[nt1 + nt2] = '.'
+for nt in nts:
+    nt_meth_mapper['C' + nt] = 'H'
+for nt in nts:
+    nt_meth_mapper['T' + nt] = 'h'
+
+nt_meth_mapper['CG'] = 'Z'
+nt_meth_mapper['TG'] = 'z'
+del nt, nts
+
+class SamAlignment:
+    def __init__(
+            self,
+            seq: str = None, qname: str = None, flag: int = 0, rname: str = "1",
+            pos: int = 0, mapq: int = 60, cigar: str = None, rnext: str = "*",
+            pnext: int = 0, tlen: int = 10, qual: str = None,
+            methylation: str = None,
+    ):
+        """Some default values calculated to make sense with given sequence or tlen.
+        If only seq given then methylation string determined, and vis versa.
+
+        Caveats:
+            - Doesn't deal with indels in a sensible way, you'll need to check that
+              yourself.
+            - Generated seq or methylation assumes all methylation is on the forward
+              strand.
+
+        """
+
+        # If a sequence is given, calculate the template length (TLEN)
+        self.tlen = tlen or len(seq)
+
+        # add CpG sites from CGs in seq, if no methylation given
+        if methylation is None:
+            if seq:
+                methylation = ''.join([
+                    nt_meth_mapper[seq[i:i + 2]]
+                    for i in range(len(seq) - 1)
+                ])
+            else:
+                methylation = '.' * self.tlen
+        self.methylation = methylation
+
+        # set seq based on the methylation string, if missing
+        if seq is None:
+            s = []
+            i = 0
+            while i < len(methylation):
+                if methylation[i] == 'Z':
+                    s.append('CG')
+                elif methylation[i] == 'z':
+                    s.append('TG')
+                elif methylation[i] == 'h':
+                    s.append('TA')
+                elif methylation[i] == 'H':
+                    s.append('CA')
+                else:
+                    s.append('A')
+                i = len(s)
+
+            # Default values if the arguments are not provided
+        self.qname = qname or ''.join(random.choices(string.ascii_letters, k=10))
+        self.seq = seq or 'N' * self.tlen
+        self.cigar = cigar or str(len(self.seq)) + 'M'
+        self.qual = qual or "J" * len(self.seq)
+
+        # Other fields
+        self.flag = flag
+        self.rname = rname
+        self.pos = pos
+        self.mapq = mapq
+        self.rnext = rnext
+        self.pnext = pnext
+
+    def __str__(self):
+        # Create SAM record as a string
+        sam_record = '\t'.join([
+            str(x) for x in [
+            self.qname,
+            self.flag,
+            self.rname,
+            self.pos,
+            self.mapq,
+            self.cigar,
+            self.rnext,
+            self.pnext,
+            self.tlen,
+            self.seq,
+            self.qual,
+            f"NM:i:tag0\tMD:Z:tag1\tXM:Z:{self.methylation}"
+        ]])
+
+        return sam_record
+
+
+def generate_sam_file(alignments: list[SamAlignment], sorting: str = 'coordinate') -> str:
+    """Output a valid SAM file for given list of alignments. Alignments will be
+    sorted according to `sorting`. Valid options: coordinate, queryname, unsorted
+    and unknown"""
+    # Validate the sorting option
+    valid_sortings = {'coordinate', 'queryname', 'unsorted', 'unknown'}
+    if sorting not in valid_sortings:
+        raise ValueError(
+            f"Invalid sorting option '{sorting}'. "
+            f"Valid options are {valid_sortings}")
+
+    # Sort the alignments if required
+    if sorting == 'coordinate':
+        alignments.sort(key=lambda x: x.pos)
+    elif sorting == 'queryname':
+        alignments.sort(key=lambda x: x.qname)
+
+    # Collect all unique reference names (rname) that are not '*'
+    rnames = set(alignment.rname for alignment in alignments if alignment.rname != "*")
+
+    # Create header, @SQ for each unique reference name
+    header_lines = [f"@HD	VN:1.0	SO:{sorting}"]
+    for rname in rnames:
+        # Determine the maximum position in the alignments for this reference name
+        max_pos = max(alignment.pos + len(alignment.seq) for alignment in alignments if alignment.rname == rname)
+        header_lines.append(f"@SQ\tSN:{rname}\tLN:{max_pos}")
+
+    # Combine the header and the alignment records
+    sam_file = "\n".join(header_lines) + "\n"
+    sam_file += "\n".join(str(alignment) for alignment in alignments)
+
+    return sam_file
