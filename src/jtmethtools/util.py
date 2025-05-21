@@ -56,6 +56,7 @@ def fasta_to_dict(fn: str|Path, full_desc=False) -> dict[str, str]:
             nt = []
         else:
             nt.append(line.upper())
+    genome[chrm] = ''.join(nt)
     return genome
 
 
