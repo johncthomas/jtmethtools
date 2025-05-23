@@ -1,6 +1,6 @@
 import typing
 from pathlib import Path
-
+import random, string
 import tarfile
 
 import tempfile
@@ -41,8 +41,8 @@ def fasta_to_dict(fn: str|Path, full_desc=False) -> dict[str, str]:
     to false to include whole description lines in the keys.
     """
     with open(fn) as f:
-
         gl = f.read().strip().split('\n')
+
     genome = {}
     chrm = None
     nt = None
@@ -229,78 +229,130 @@ class MockAlignment:
             return self._reference_end
 
 
-import random
-import string
+def bismark_methylation_calls(
+    bs_seq: str,
+    genome_seq: str
+) -> str:
+    """
+    Generate a Bismark-style methylation call string for a bisulfite read.
+    Forward read is assumed.
 
-nt_meth_mapper = dict()
-nts = 'ACTG'
-for nt1 in nts:
-    for nt2 in nts:
-        nt_meth_mapper[nt1 + nt2] = '.'
-for nt in nts:
-    nt_meth_mapper['C' + nt] = 'H'
-for nt in nts:
-    nt_meth_mapper['T' + nt] = 'h'
+    Parameters
+    ----------
+    bs_seq
+        Bisulfite‐converted read sequence (A/C/G/T), same length as genome_seq.
+    genome_seq
+        Reference genome sequence aligned to the read, same length as bs_seq.
 
-nt_meth_mapper['CG'] = 'Z'
-nt_meth_mapper['TG'] = 'z'
-del nt, nts
+    Returns
+    -------
+    str
+        Methylation call string, same length as inputs, with:
+          Z/z for CpG,
+          X/x for CHG,
+          H/h for CHH,
+          . elsewhere.
+    """
+    calls: list[str] = []
+    L = len(genome_seq)
+
+    # upper‐case everything so we can ignore case
+    bs = bs_seq.upper()
+    ref = genome_seq.upper()
+
+    for i, (g, r) in enumerate(zip(ref, bs)):
+        if g == 'C':
+            # determine context
+            if i + 1 < L and ref[i+1] == 'G':
+                up, lo = 'Z', 'z'
+            elif i + 2 < L and ref[i+2] == 'G':
+                up, lo = 'X', 'x'
+            else:
+                up, lo = 'H', 'h'
+            # methylation call
+            if r == 'C':
+                calls.append(up)
+            elif r == 'T':
+                calls.append(lo)
+            else:
+                calls.append('.')
+        else:
+            calls.append('.')
+
+    return ''.join(calls)
+
 
 class SamAlignment:
     def __init__(
             self,
-            seq: str = None, qname: str = None, flag: int = 0, rname: str = "1",
-            pos: int = 0, mapq: int = 60, cigar: str = None, rnext: str = "*",
+            seq: str = None, qname: str = None, flag: int = 2, rname: str = "1",
+            pos: int = 1, mapq: int = 60, cigar: str = None, rnext: str = "*",
             pnext: int = 0, tlen: int = 10, qual: str = None,
-            methylation: str = None,
+            methylation: str = None, genome: str = None,
     ):
-        """Some default values calculated to make sense with given sequence or tlen.
-        If only seq given then methylation string determined, and vis versa.
+        """Some default values calculated to make sense with given parameters.
+        If seq and genome provided, a methylation string is generated. If seq is None,
+        but a methylation string is provided, a valid nulceotide sequence is generated.
+
+        Unless passed with a valid nucleotide string, methylation has to be even in length
+        with cytosines, i.e. "Z.z...h."
+
+        Otherwise default methylation is '.'*tlen and seq is 'N'*tlen.
 
         Caveats:
-            - Doesn't deal with indels in a sensible way, you'll need to check that
-              yourself.
+            - Doesn't deal with indels in a sensible way, you'll need to provide full
+              prameters.
             - Generated seq or methylation assumes all methylation is on the forward
               strand.
-
         """
 
-        # If a sequence is given, calculate the template length (TLEN)
-        self.tlen = tlen or len(seq)
+        if seq and methylation:
+            assert len(seq) == len(methylation)
+        if seq:
+            tlen = len(seq)
+        if methylation:
+            tlen = len(methylation)
 
         # add CpG sites from CGs in seq, if no methylation given
         if methylation is None:
-            if seq:
-                methylation = ''.join([
-                    nt_meth_mapper[seq[i:i + 2]]
-                    for i in range(len(seq) - 1)
-                ])
+            if seq and genome:
+                methylation = bismark_methylation_calls(seq, genome)
             else:
-                methylation = '.' * self.tlen
+                methylation = '.' * tlen
+        else:
+            if len(methylation) % 2:
+                raise ValueError('methylation has to be an even number in length')
         self.methylation = methylation
 
         # set seq based on the methylation string, if missing
-        if seq is None:
-            s = []
+        if (seq is None) and (methylation is not None):
+            s = ''
             i = 0
             while i < len(methylation):
                 if methylation[i] == 'Z':
-                    s.append('CG')
+                    s += 'CG'
                 elif methylation[i] == 'z':
-                    s.append('TG')
+                    s += 'TG'
                 elif methylation[i] == 'h':
-                    s.append('TA')
+                    s += 'TA'
                 elif methylation[i] == 'H':
-                    s.append('CA')
+                    s += 'CA'
                 else:
-                    s.append('A')
+                    s += 'A'
                 i = len(s)
+            seq = ''.join(s)
 
-            # Default values if the arguments are not provided
+        # if seq is still None, make sure it's set
+        if seq is None:
+            seq = 'N' * tlen
+
+        self.tlen = tlen
+
+        # Default values if the arguments are not provided
         self.qname = qname or ''.join(random.choices(string.ascii_letters, k=10))
-        self.seq = seq or 'N' * self.tlen
-        self.cigar = cigar or str(len(self.seq)) + 'M'
-        self.qual = qual or "J" * len(self.seq)
+        self.seq = seq
+        self.cigar = cigar or str(tlen) + 'M'
+        self.qual = qual or "J" * tlen
 
         # Other fields
         self.flag = flag
@@ -314,19 +366,19 @@ class SamAlignment:
         # Create SAM record as a string
         sam_record = '\t'.join([
             str(x) for x in [
-            self.qname,
-            self.flag,
-            self.rname,
-            self.pos,
-            self.mapq,
-            self.cigar,
-            self.rnext,
-            self.pnext,
-            self.tlen,
-            self.seq,
-            self.qual,
-            f"NM:i:tag0\tMD:Z:tag1\tXM:Z:{self.methylation}"
-        ]])
+                self.qname,
+                self.flag,
+                self.rname,
+                self.pos,
+                self.mapq,
+                self.cigar,
+                self.rnext,
+                self.pnext,
+                self.tlen,
+                self.seq,
+                self.qual,
+                f"NM:i:tag0\tMD:Z:tag1\tXM:Z:{self.methylation}"
+            ]])
 
         return sam_record
 
