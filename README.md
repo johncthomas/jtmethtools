@@ -1,5 +1,8 @@
-Methylation data tools. Arrow based tables for efficiently storing and processing Bismark BAMs. Module for producing 
+Methylation data tools. Primarily classes and functions to be built upon by other Python tools. Arrow based tables for efficiently storing and processing Bismark BAMs. Module for producing 
 pile-up images of regions for CNNs.
+
+# Classes
+Explore alignments.Alignment and classes.*
 
 # Convert a BAM to a parquet tables
 Script: `jtm-write-alignment-data`
