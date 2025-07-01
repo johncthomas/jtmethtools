@@ -1,0 +1,169 @@
+import jtmethtools as jtm
+import numpy as np
+import matplotlib.pyplot as plt
+from pathlib import Path
+from datetime import datetime
+from loguru import logger
+import dataclasses
+
+@dataclasses.dataclass
+class MethFreqResult:
+    cpg_methylated: np.ndarray
+    cpg_total: np.ndarray
+    ch_methylated: np.ndarray
+    ch_total: np.ndarray
+    length:int
+
+    def to_df(self):
+        """Convert the result to a pandas DataFrame."""
+        import pandas as pd
+        data = {
+            'Position': np.arange(self.length),
+            'CpG_Methylated': self.cpg_methylated,
+            'CpG_Total': self.cpg_total,
+            'CpH_Methylated': self.ch_methylated,
+            'CpH_Total': self.ch_total
+        }
+        return pd.DataFrame(data)
+
+    def write_csv(self, fn:Path):
+        """Write the result to a CSV file."""
+        df = self.to_df()
+        df.to_csv(fn, index=False)
+        logger.info(f"Methylation by position data written to {fn}")
+
+
+def methylation_by_position(
+        fn:Path, length=100, stopper=-1
+) -> MethFreqResult:
+    """Calculate the fraction of methylation by position in the read, relative
+    to the adapter.
+
+    Parameters:
+        fn : Path to the BAM file.
+        length : Number of bases to consider from the start of the read.
+        stopper : Stop after this many alignments, -1 means no limit.
+
+    """
+    logger.info(f"Calculating methylation by position for {fn} with length {length} and stopper {stopper}")
+    bam_iterer = jtm.alignments.iter_bam_segments(fn)
+
+    mcpg_arr = np.zeros(shape=100, dtype=np.uint32)
+    cpg_arr = np.zeros(shape=100, dtype=np.uint32)
+    mch_arr = np.zeros(shape=100, dtype=np.uint32)
+    ch_arr = np.zeros(shape=100, dtype=np.uint32)
+
+    ch_set = {'x', 'h', 'u', 'X', 'H', 'U'}
+
+    start = datetime.now()
+    for aln_i, (a1, a2) in enumerate(bam_iterer):
+        if (not a1.is_proper_pair) or a1.is_unmapped:
+            continue
+        for a in (a1, a2):
+            # get the methylation string
+            m = jtm.alignments.get_bismark_met_str(a)
+            # reverse the read if it's not forward - metstr
+            #   are always in forward orientation, so this puts the
+            #   end next to the adapter
+            if not a.is_forward:
+                m = ''.join(m[::-1])
+            for i, met in enumerate(m):
+                if i > length - 1:
+                    break
+                # skip the most common one
+                if met == '.':
+                    continue
+                if met.lower() == 'z':
+                    cpg_arr[i] += 1
+                    if met == 'Z':
+                        mcpg_arr[i] += 1
+                elif met in ch_set:
+                    ch_arr[i] += 1
+                    if met.isupper():
+                        mch_arr[i] += 1
+
+        if aln_i == stopper:
+            break
+    end = datetime.now()
+    logger.info(f'Processed {aln_i+1} alignments in {end - start}.')
+
+    return MethFreqResult(
+        cpg_methylated=mcpg_arr,
+        cpg_total=cpg_arr,
+        ch_methylated=mch_arr,
+        ch_total=ch_arr,
+        length=length
+    )
+
+def plot_methylation_by_position(result:MethFreqResult,):
+    """Plot the methylation by position."""
+    clr1 = (0.2980392156862745, 0.4470588235294118, 0.6901960784313725)
+    clr2 = (0.8666666666666667, 0.5176470588235295, 0.3215686274509804)
+    x = np.arange(result.length)
+    # fig, axes = plt.subplots(2, 1, figsize=(4, 6), sharex=True)
+    fig, ax1 = plt.subplots()
+    ax1.plot(x, result.cpg_methylated / result.cpg_total,
+             color=clr1)
+    plt.ylabel('Frac CpG methylated', color=clr1)
+    plt.xlabel('BP from adapter')
+    ax1.tick_params(axis='y', labelcolor=clr1)
+    ax2 = ax1.twinx()
+
+    plt.plot(x, result.ch_methylated / result.ch_total,
+             color=clr2)
+    plt.ylabel('Frac CpH methylated', color=clr2)
+    ax2.tick_params(axis='y', labelcolor=clr2)
+    plt.grid()
+    return fig
+
+
+# command line interface with Datargs
+import datargs
+from dataclasses import field
+@datargs.argsclass(description="""\
+Get methylation fraction by position.
+""")
+class MethylationMetricsArgs:
+    """Command line arguments for methylation metrics script."""
+    bam: Path = field(
+        metadata={'help': 'Path to the BAM file.'}
+    )
+    length: int = field(
+        default=100,
+        metadata={'help': 'Number of bases from start to include.'}
+    )
+    head: int = field(
+        default=-1,
+        metadata={'help': 'Stop after this many alignments, -1 means no limit.'}
+    )
+    table: Path = field(
+        default=None,
+        metadata={'help': 'Output CSV/TSV file for methylation by position. Must '
+                          'have a valid extension: ".csv" or ".tsv". '}
+    )
+    fig: Path = field(
+        default=None,
+        metadata={'help': 'Output figure. Filetype is inferred from the extension. '
+                          '(*.png recommended)'}
+    )
+
+    def validate(self):
+        """Validate the arguments."""
+        if self.table is None and self.fig is None:
+            raise ValueError("At least one output must be specified: --table and/or --fig.")
+        if self.table is not None and not self.csv.suffix in {'.csv', '.tsv'}:
+            raise ValueError("Output CSV file must have a valid extension (e.g., .csv).")
+
+
+def cli_met_by_pos():
+    args = datargs.parse(MethylationMetricsArgs)
+    args.validate()
+
+    result = methylation_by_position(args.bam, length=args.length, stopper=args.head)
+
+    if args.table:
+        result.write_csv(args.table)
+
+    if args.fig:
+        fig = plot_methylation_by_position(result)
+        fig.savefig(args.fig, bbox_inches='tight', dpi=150)
