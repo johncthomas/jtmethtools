@@ -13,15 +13,12 @@ from jtmethtools.util import (
 )
 from numpy import typing as npt
 from numpy.typing import NDArray
+import re
 
-
-
-
-
-type CpGIndexDict =  dict[str, dict[int, int]]
 type Pathy = str|Path
 
-__all__ = ['Regions', 'CpGIndex', 'Genome', 'filter_cpg_index_by_regions', 'LociRange']
+__all__ = ['Regions', 'CpGIndex', 'Genome',  'LociRange']
+
 
 @define(slots=True)
 class LociRange:
@@ -107,73 +104,65 @@ class Regions:
             return missing_value
 
 
-
+@define(frozen=True)
 class CpGIndex:
-    def __init__(self,
-                 index:CpGIndexDict,
-                 region_names:list[str]=None,
-                 n_cpg: int=None,
-                 ):
-        """For holding map of every CpG locus to an index number.
+    """Index of CpG sites in a genome.
 
-        CpGIndex.index structured thusly:
-            {chromsome:{locus:idx, ...}, ...}
-
-        Constructor available Genome.get_cpg_index.
-
-        Args:
-            index: The mapping of chrm, loc -> cpg_idx
-            region_names: regions names at each CpG. Automatically generated if
-                filter_regions is given.
-            n_cpg: Total number of CpGs. calculated if not given."""
-        self.index = index
-        self.region_names = region_names
-        if n_cpg is None:
-            n_cpg = sum([len(v) for v in self.index.values()])
-        self.n_cpg = n_cpg
-
-    def to_columns(
-            self
-    ) -> TypedDict('CpGIndexColumns',
-                   {'Chrm': pd.Categorical, 'Locus': npt.NDArray}):
-        """Output index in long-form as columns, "Chrm" and "Locus".
-        """
-        n = self.n_cpg
-        codes_chrm = np.zeros(n, dtype=np.int32)
-        cats_chrm = []
-
-        loci_values = np.zeros(n, dtype=np.uint32)
-
-        start = 0
-        for i, (chrm, loci) in enumerate(self.index.items()):
-            cats_chrm.append(chrm)
-            end = start + len(loci)
-            codes_chrm[start:end] = i
-            loci_values[start:end] = list(loci.keys())
-            start = end
-
-        chromosomes = pd.Categorical.from_codes(codes_chrm, cats_chrm)
-
-        return {'Chrm': chromosomes, 'Locus': loci_values}
-
+    Attributes:
+        cpg_list: a tuple of (chrm, locus) tuples
+        locus2index: maps (chrm, locus) -> cpg_index
+        region_names: optional tuple of region names for each CpG site
+    """
+    cpg_list: tuple[tuple[str, int], ...]
+    locus2index: MappingProxyType[tuple[str, int], int]
+    region_names: tuple[str, ...] = None
 
     @classmethod
-    def _ttest_to_columns(cls) -> None:
-        cpg_index = {'1': {1: 0, 10: 1, 100: 2}, '2': {2: 0, 20: 1, 200: 2}}
-        #cpg_regions = ['1_1', '1_1', '1_2', '2_1', '2_1', '2_1']
+    def from_cpg_list(
+            cls,
+            cpg_list: list[tuple[str, int]],
+            region_names: tuple[str, ...] = None
+    ) -> Self:
+        """Create a CpGIndex from a list of (chromosome, position) tuples."""
+        pos2index = MappingProxyType({
+            pos: idx for idx, pos in enumerate(cpg_list)
+        })
+        return cls(cpg_list=tuple(cpg_list), locus2index=pos2index, region_names=region_names)
 
-        indx = cls(cpg_index)
+    @classmethod
+    def from_genome(cls, genome: 'Genome', region_names: tuple[str] = None) -> Self:
+        """Create a CpGIndex from a Genome object."""
+        cpg_list = []
+        for chrm, seq in genome.sequences.items():
+            cpg_list.extend((chrm, m.start()) for m in re.finditer('(?=CG)', seq))
+        return cls.from_cpg_list(cpg_list, region_names=region_names)
 
-        cols = indx.to_columns()
+    @classmethod
+    def from_fasta(cls, fn: str | Path, region_names: tuple[str] = None) -> Self:
+        """Create a CpGIndex from a fasta file."""
+        genome = Genome.from_fasta(fn)
+        return cls.from_genome(genome, region_names=region_names)
 
-        assert cols['Chrm'].tolist() == ['1', '1', '1', '2', '2', '2']
+    def filter_cpg_index_by_regions(
+            self,
+            regions: Regions,
+    ) -> Self:
 
-        assert np.all(
-            np.array(
-                [1, 10, 100, 2, 20, 200],
-                dtype=cols['Locus'].dtype
-            ) == cols['Locus']
-        )
+        new_cpg_list = []
+        cpg_regions:list[str] = []
+        for chrm, loc in self.cpg_list:
+
+
+            hit = regions.region_at_locus(chrm, loc)
+            if hit:
+                cpg_regions.append(hit)
+                new_cpg_list.append((chrm, loc))
+
+        return CpGIndex.from_cpg_list(new_cpg_list, region_names=tuple(cpg_regions))
+
+    def __hash__(self):
+        # as it's frozen, we can use the id of the object as a hash.
+        return id(self)
 
 
 @define(frozen=True)
@@ -196,21 +185,32 @@ class Genome:
         return Genome.from_dict(sequences=new_seqs, filename=self.filename)
 
     @classmethod
-    def from_fasta(cls, fn: str | Path, full_desc=False) -> Self:
+    def from_fasta(cls, fn: str | Path,
+                   full_desc=False, cannonical_only=True) -> Self:
         """Load a fasta file into a Genome object"""
+        seqs =  fasta_to_dict(fn, full_desc=full_desc)
+        if cannonical_only:
+            seqs = MappingProxyType({
+                k: v for k, v in seqs.items() if k in CANNONICAL_CHRM
+            })
         genome = cls(
             MappingProxyType(
-                fasta_to_dict(fn, full_desc=full_desc)
+                seqs
             ),
             filename=fn
         )
         return genome
 
     @classmethod
-    def from_dict(cls, sequences: dict[str, str], filename='<from dict>') -> Self:
+    def from_dict(cls, sequences: dict[str, str],
+                  filename='<from dict>', cannonical_only=True,) -> Self:
         """Create a Genome object from a dict.
 
         Interally uses MappingProxyType for immutable dict like."""
+        if cannonical_only:
+            sequences = {
+                k: v for k, v in sequences.items() if k in CANNONICAL_CHRM
+            }
         return cls(MappingProxyType(sequences), filename=filename)
 
     def __getitem__(self, key):
@@ -218,28 +218,8 @@ class Genome:
 
     @cached_property
     def cpg_index(self) -> CpGIndex:
-        idx = self.get_cpg_index()
+        idx = CpGIndex.from_genome(self)
         return idx
-
-    @lru_cache(1)
-    def get_cpg_index(self) -> CpGIndex:
-
-        cpg_chrm_loc_to_idx: dict[str, dict[int, int]] = {}
-        cpg_count = 0
-        for chrm, contig in self.sequences.items():
-            if chrm not in CANNONICAL_CHRM:
-                continue
-            cpg_chrm_loc_to_idx[chrm] = loc2idx = {}
-            for loc in range(len(contig) - 1):
-                if contig[loc] == 'C':
-                    if contig[loc + 1] == 'G':
-                        loc2idx[loc] = cpg_count
-                        cpg_count += 1
-
-        return CpGIndex(
-            index=cpg_chrm_loc_to_idx,
-            n_cpg=cpg_count
-        )
 
     @property
     def chromsomes(self) -> list[str]:
@@ -254,23 +234,34 @@ class Genome:
         return id(self)
 
 
-def filter_cpg_index_by_regions(
-        cpg_index:CpGIndex,
-        regions:Regions
-) -> CpGIndex:
-    cpg_dict = {}
-    n_filt_cpg = 0
-    cpg_regions = []
-    for chrm, fullidx in cpg_index.index.items():
-        cpg_dict[chrm] = filtidx = {}
-        for loc in fullidx.keys():
-            hit = regions.region_at_locus(chrm, loc)
-            if hit:
-                filtidx[loc] = n_filt_cpg
-                n_filt_cpg += 1
-                cpg_regions.append(hit)
-
-    return CpGIndex(cpg_dict, region_names=cpg_regions)
 
 
 
+def ttest_genome_cpg_index():
+    testgen = Genome.from_dict(
+             # 0123456789012
+             # ___x_x___x___
+        {'a': 'TTTCGCGTTCGGC'},
+        cannonical_only=False
+    )
+    #print(testgen.sequences)
+    test_cindex = CpGIndex.from_genome(testgen)
+    #print(test_cindex.cpg_list)
+    assert test_cindex.cpg_list == (('a', 3), ('a', 5), ('a', 9))
+    assert test_cindex.locus2index == MappingProxyType({('a', 3): 0, ('a', 5): 1, ('a', 9): 2})
+
+
+    regions_df = pd.DataFrame({
+        'Chrm': ['a'],
+        'Start': [4],
+        'End': [6],
+        'Name': ['test_region']
+    })
+    r = Regions.from_df(regions_df)
+    t2 = test_cindex.filter_cpg_index_by_regions(r)
+    assert t2.cpg_list == ( ('a', 5), )
+    assert t2.region_names == ('test_region',)
+
+if __name__ == '__main__':
+    ttest_genome_cpg_index()
+    print("All tests passed.")
