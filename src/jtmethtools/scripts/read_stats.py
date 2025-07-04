@@ -193,6 +193,7 @@ def run(bamfn, out_prefix, do_plot, write_table, cannon_chrm):
             dpi=300,
             bbox_inches='tight'
         )
+        plt.close()
 
     if write_table:
         table.to_parquet(
@@ -255,14 +256,19 @@ class ReadStatsArgs:
         help="Bismark BAM file (only one).",
         aliases=['-b']
     ))
-    out_prefix: Path = field(metadata=dict(
+    out_dir: Path = field(metadata=dict(
         required=True,
         help="Output files will begin with this. If output dir doesn't exist, it will be created.",
         aliases=["-o"]
     ))
-    cannonical_chrm: bool = field(metadata=dict(
+    sample_name: str = field(metadata=dict(
+        default=None,
+        help="Sample name to use in output files. Default is taken from the bam name.",
+        aliases=["-s"]
+    ))
+    all_chrm: bool = field(metadata=dict(
         default=False,
-        help='Only include reads from cannonical chromosomes.'
+        help='By default, only include reads from cannonical chromosomes. Set this to include all chromosomes.'
     ))
     no_plot: bool = field(metadata=dict(
         default=False,
@@ -274,17 +280,23 @@ class ReadStatsArgs:
     ))
 
 
-def cli():
+def cli_pos_beta():
     args = datargs.parse(ReadStatsArgs)
+    if args.sample_name is None:
+        samp = args.bamfn.stem+'.'
+    else:
+        samp = args.sample_name
+    out_prefix = Path(args.out_dir) / (samp+'.')
+
     run(
         args.bamfn,
-        args.out_prefix,
-        not args.no_plot,
-        not args.no_table,
-        args.cannonical_chrm
+        out_prefix,
+        do_plot=not args.no_plot,
+        write_table=not args.no_table,
+        cannon_chrm=not args.all_chrm
     )
 
 if __name__ == '__main__':
     # print('Running test.')
     # ttest()
-    cli()
+    cli_pos_beta()
