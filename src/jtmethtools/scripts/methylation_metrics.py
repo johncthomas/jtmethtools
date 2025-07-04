@@ -1,3 +1,5 @@
+import os
+
 import jtmethtools as jtm
 import numpy as np
 import matplotlib.pyplot as plt
@@ -26,10 +28,10 @@ class MethFreqResult:
         }
         return pd.DataFrame(data)
 
-    def write_csv(self, fn:Path):
-        """Write the result to a CSV file."""
+    def write_tsv(self, fn: Path | str):
+        """Write the result to a TSV file."""
         df = self.to_df()
-        df.to_csv(fn, index=False)
+        df.to_csv(fn, index=False, sep='\t')
         logger.info(f"Methylation by position data written to {fn}")
 
 
@@ -121,49 +123,61 @@ def plot_methylation_by_position(result:MethFreqResult,):
 import datargs
 from dataclasses import field
 @datargs.argsclass(description="""\
-Get methylation fraction by position.
+Get methylation fraction by position. Outputs a table and a figure to the out-dir, by default.
 """)
 class MethylationMetricsArgs:
-    """Command line arguments for methylation metrics script."""
-    bam: Path = field(
-        metadata={'help': 'Path to the BAM file.'}
-    )
+    """Command line arguments for methylation metrics calculation."""
+    bam: Path = field(metadata={
+        'help': 'Path to the BAM file.',
+        'aliases': ['-b'],
+    }, )
+    out_dir: Path = field(metadata=dict(
+        required=True,
+        help="Output files will begin with this. If output dir doesn't exist, it will be created.",
+        aliases=["-o"]
+    ))
+    sample_name: str = field(metadata=dict(
+        default=None,
+        help="Sample name to use in output files. Default is taken from the bam name.",
+        aliases=["-s"]
+    ))
     length: int = field(
         default=100,
-        metadata={'help': 'Number of bases from start to include.'}
+        metadata={'help': 'Number of bases from start to include. (default: 100)'},
     )
     head: int = field(
         default=-1,
-        metadata={'help': 'Stop after this many alignments, -1 means no limit.'}
+        metadata={'help': 'Stop after this many alignments, -1 means no limit. (default: -1)'},
     )
-    table: Path = field(
+
+    no_table: Path = field(
         default=None,
-        metadata={'help': 'Output CSV/TSV file for methylation by position. Must '
-                          'have a valid extension: ".csv" or ".tsv". '}
+        metadata={'help': 'Do not write a table of the results. '}
     )
-    fig: Path = field(
+    no_fig: Path = field(
         default=None,
-        metadata={'help': 'Output figure. Filetype is inferred from the extension. '
-                          '(*.png recommended)'}
+        metadata={'help': 'Do not write a figure of the results. '}
     )
 
     def validate(self):
         """Validate the arguments."""
-        if self.table is None and self.fig is None:
-            raise ValueError("At least one output must be specified: --table and/or --fig.")
-        if self.table is not None and not self.csv.suffix in {'.csv', '.tsv'}:
-            raise ValueError("Output CSV file must have a valid extension (e.g., .csv).")
+        if self.no_table and self.no_fig:
+            raise ValueError("At least one output must be allowed.")
+
 
 
 def cli_met_by_pos():
     args = datargs.parse(MethylationMetricsArgs)
     args.validate()
-
+    os.makedirs(args.out_dir, exist_ok=True)
     result = methylation_by_position(args.bam, length=args.length, stopper=args.head)
 
-    if args.table:
-        result.write_csv(args.table)
+    samp = args.sample_name or args.bam.stem
+    prefix = Path(args.out_dir) / (samp + '.')
 
-    if args.fig:
+    if not args.no_table:
+        result.write_tsv(str(prefix) + 'met_by_position.tsv')
+
+    if not args.no_fig:
         fig = plot_methylation_by_position(result)
-        fig.savefig(args.fig, bbox_inches='tight', dpi=150)
+        fig.savefig(str(prefix)+'met_by_position.png', bbox_inches='tight', dpi=150)
