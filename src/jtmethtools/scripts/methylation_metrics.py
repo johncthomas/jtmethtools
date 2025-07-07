@@ -50,10 +50,10 @@ def methylation_by_position(
     logger.info(f"Calculating methylation by position for {fn} with length {length} and stopper {stopper}")
     bam_iterer = jtm.alignments.iter_bam_segments(fn, paired_end=paired_end)
 
-    mcpg_arr = np.zeros(shape=100, dtype=np.uint32)
-    cpg_arr = np.zeros(shape=100, dtype=np.uint32)
-    mch_arr = np.zeros(shape=100, dtype=np.uint32)
-    ch_arr = np.zeros(shape=100, dtype=np.uint32)
+    mcpg_arr = np.zeros(shape=length, dtype=np.uint32)
+    cpg_arr = np.zeros(shape=length, dtype=np.uint32)
+    mch_arr = np.zeros(shape=length, dtype=np.uint32)
+    ch_arr = np.zeros(shape=length, dtype=np.uint32)
 
     ch_set = {'x', 'h', 'u', 'X', 'H', 'U'}
 
