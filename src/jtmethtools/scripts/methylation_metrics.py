@@ -59,7 +59,7 @@ def methylation_by_position(
 
     start = datetime.now()
     for aln_i, (a1, a2) in enumerate(bam_iterer):
-        if a1.is_unmapped or ((not paired_end) and (not a1.is_proper_pair)):
+        if a1.is_unmapped or (paired_end and (not a1.is_proper_pair)):
             continue
         for a in (a1, a2):
             # get the methylation string
