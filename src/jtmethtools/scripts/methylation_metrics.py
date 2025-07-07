@@ -62,6 +62,8 @@ def methylation_by_position(
         if a1.is_unmapped or (paired_end and (not a1.is_proper_pair)):
             continue
         for a in (a1, a2):
+            if a is None:
+                continue
             # get the methylation string
             m = jtm.alignments.get_bismark_met_str(a)
             # reverse the read if it's not forward - metstr
