@@ -155,12 +155,12 @@ class MethylationMetricsArgs:
         metadata={'help': 'Stop after this many alignments, -1 means no limit. (default: -1)'},
     )
 
-    no_table: Path = field(
-        default=None,
+    no_table: bool = field(
+        default=False,
         metadata={'help': 'Do not write a table of the results. '}
     )
-    no_fig: Path = field(
-        default=None,
+    no_fig: bool = field(
+        default=False,
         metadata={'help': 'Do not write a figure of the results. '}
     )
 
