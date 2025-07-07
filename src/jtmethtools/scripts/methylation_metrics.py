@@ -36,7 +36,7 @@ class MethFreqResult:
 
 
 def methylation_by_position(
-        fn:Path, length=100, stopper=-1
+        fn:Path, length=100, stopper=-1, paired_end=True
 ) -> MethFreqResult:
     """Calculate the fraction of methylation by position in the read, relative
     to the adapter.
@@ -45,10 +45,10 @@ def methylation_by_position(
         fn : Path to the BAM file.
         length : Number of bases to consider from the start of the read.
         stopper : Stop after this many alignments, -1 means no limit.
-
+        paired_end: Set to False if single-ended, to reduce memory usage.
     """
     logger.info(f"Calculating methylation by position for {fn} with length {length} and stopper {stopper}")
-    bam_iterer = jtm.alignments.iter_bam_segments(fn)
+    bam_iterer = jtm.alignments.iter_bam_segments(fn, paired_end=paired_end)
 
     mcpg_arr = np.zeros(shape=100, dtype=np.uint32)
     cpg_arr = np.zeros(shape=100, dtype=np.uint32)
@@ -145,6 +145,11 @@ class MethylationMetricsArgs:
         default=100,
         metadata={'help': 'Number of bases from start to include. (default: 100)'},
     )
+    single_ended: bool = field(
+        default=False,
+        metadata={'help': 'Set if sequences are not paired end, otherwise it will use lots '
+                          'of memory. (default: False)'},
+    )
     head: int = field(
         default=-1,
         metadata={'help': 'Stop after this many alignments, -1 means no limit. (default: -1)'},
@@ -170,7 +175,8 @@ def cli_met_by_pos():
     args = datargs.parse(MethylationMetricsArgs)
     args.validate()
     os.makedirs(args.out_dir, exist_ok=True)
-    result = methylation_by_position(args.bam, length=args.length, stopper=args.head)
+    result = methylation_by_position(args.bam, length=args.length, stopper=args.head,
+                                     paired_end=not args.single_ended)
 
     samp = args.sample_name or args.bam.stem
     prefix = Path(args.out_dir) / (samp + '.')
