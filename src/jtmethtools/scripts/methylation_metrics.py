@@ -1,4 +1,6 @@
 import os
+from collections import Counter
+from typing import Callable, Tuple
 
 import jtmethtools as jtm
 import numpy as np
@@ -7,6 +9,10 @@ from pathlib import Path
 from datetime import datetime
 from loguru import logger
 import dataclasses
+
+from jtmethtools import Regions
+from jtmethtools.alignments import Alignment, alignment_overlaps_region
+
 
 @dataclasses.dataclass
 class MethFreqResult:
@@ -127,7 +133,7 @@ from dataclasses import field
 @datargs.argsclass(description="""\
 Get methylation fraction by position. Outputs a table and a figure to the out-dir, by default.
 """)
-class MethylationMetricsArgs:
+class ArgsPosMet:
     """Command line arguments for methylation metrics calculation."""
     bam: Path = field(metadata={
         'help': 'Path to the BAM file.',
@@ -172,9 +178,8 @@ class MethylationMetricsArgs:
             raise ValueError("At least one output must be allowed.")
 
 
-
 def cli_met_by_pos():
-    args = datargs.parse(MethylationMetricsArgs)
+    args = datargs.parse(ArgsPosMet)
     args.validate()
     os.makedirs(args.out_dir, exist_ok=True)
     result = methylation_by_position(args.bam, length=args.length, stopper=args.head,
@@ -189,3 +194,142 @@ def cli_met_by_pos():
     if not args.no_fig:
         fig = plot_methylation_by_position(result)
         fig.savefig(str(prefix)+'met_by_position.png', bbox_inches='tight', dpi=150)
+
+
+def met_stats_of_regions(
+        bamfn: Path | str,
+        regions:Regions,
+        paired_end:bool=False,
+        min_mapq:int=0,
+        min_ncpg:int=0,
+
+) -> Counter:
+    """Calculate methylation statistics of a filtered BAM file.
+
+    Number/proportion of aligned reads, and number of methylated CpG and CpH.
+
+    Probably makes sense to treat everything as single ended.
+
+    """
+    bam_iterer = jtm.alignments.iter_bam_segments(bamfn, paired_end=paired_end)
+
+    results = Counter()
+
+    for alns in bam_iterer:
+        for aln in alns:
+
+            if aln is None:
+                continue
+
+            results['TotalReads'] += 1
+
+            if aln.is_unmapped:
+                results['UnmappedReads'] += 1
+                continue
+
+            if not alignment_overlaps_region(aln, regions):
+                results['MissesRegions'] +=  1
+                continue
+
+            results['AlignedHits'] += 1
+
+            metstr = jtm.alignments.get_bismark_met_str(aln)
+            low_metstr = metstr.lower()
+            has_ch = any(met in {'x', 'h', 'u'} for met in low_metstr)
+
+            if min_mapq and aln.mapping_quality < min_mapq:
+                results['LowMapQ'] += 1
+                continue
+
+            if min_ncpg and low_metstr.count('z') < min_ncpg:
+                results['LowCpGs'] += 1
+                continue
+
+            for met in metstr:
+                if low_metstr == 'z':
+                    results['TotalCpG'] += 1
+                    if met == 'Z':
+                        results['MethylatedCpG'] += 1
+
+                    if not has_ch:
+                        results['TotalCpG_NoCpH'] += 1
+                        if met == 'Z':
+                            results['MethylatedCpG_NoCpH'] += 1
+
+                elif low_metstr in {'x', 'h', 'u'}:
+                    results['TotalCh'] += 1
+                    if met.isupper():
+                        results['methylated_ch'] += 1
+    return results
+
+
+@datargs.argsclass(description="""\
+Get methylation stats from regions given by BED file.
+""")
+class ArgsStatsInRegions:
+    """Command line arguments for methylation stats calculation."""
+    bams: list[Path] = field(metadata={
+        'help': 'Path to BAM files.',
+        'required': True,
+        'nargs': '+',
+        'aliases': ['-b'],
+    }, )
+    regions: Path = field(metadata=dict(
+        required=True,
+        help="BED file with regions to calculate stats in.",
+        aliases=["-r"]
+    ))
+    out_file:Path = field(metadata=dict(
+        required=True,
+        help='Output file to write the results to.',
+        aliases=['-o']
+    ))
+
+    min_mapq: int = field(
+        default=0,
+        metadata={'help': 'Minimum mapping quality to consider a read. (default: 0)'},
+    )
+    min_ncpg: int = field(
+        default=0,
+        metadata={'help': 'Minimum number of methylated CpGs to consider a read. (default: 0)'},
+    )
+
+
+def cli_met_stats_in_regions():
+    args = datargs.parse(ArgsStatsInRegions)
+    regions = Regions.from_bed(args.regions)
+
+    results = []
+
+    logger.add(print, level='INFO', format="{time} {level} {message}",)
+
+    # create dir if requred
+    out_dir = args.out_file.parent
+    if not out_dir.exists():
+        logger.info(f"Creating output directory {out_dir}")
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+
+    for bamfn in args.bams:
+        bamfn = Path(bamfn)
+        logger.info(f"Calculating methylation stats for {bamfn} in {regions}")
+        res = met_stats_of_regions(
+            bamfn=bamfn,
+            regions=regions,
+
+            min_mapq=args.min_mapq,
+            min_ncpg=args.min_ncpg
+        )
+        res = dict(res)
+        res['BAM'] = str(bamfn)
+        res['Regions'] = str(args.regions)
+        results.append(res)
+
+    # write to TSV
+    import pandas as pd
+    df = pd.DataFrame(results)
+    df.to_csv(args.out_file, sep='\t', index=False)
+
+
+if __name__ == '__main__':
+    cli_met_stats_in_regions()
