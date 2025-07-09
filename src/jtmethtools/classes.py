@@ -48,6 +48,19 @@ class Regions:
     names: dict[str, NDArray[str]]
     df: pd.DataFrame = None
 
+    def __attrs_post_init__(self):
+        # make it insensitive to presence/absence of 'chr' in chromosome names
+        chromosomes =  list(self.starts.keys())
+        for c in chromosomes:
+            if c.startswith('chr'):
+                nuchrm = c[3:]
+            else:
+                nuchrm = 'chr' + c
+
+            self.starts[nuchrm] = self.starts[c]
+            self.ends[nuchrm] = self.ends[c]
+            self.names[nuchrm] = self.names[c]
+
     def iter(self) -> typing.Iterable[LociRange]:
         for _, row in self.df.iterrows():
             yield LociRange(
@@ -59,7 +72,7 @@ class Regions:
 
     @cached_property
     def chromsomes(self) -> set[str]:
-        return set(self.df.Chrm.unique())
+        return set(self.starts.keys())
 
     @classmethod
     def from_file(cls, filename: Pathy) -> Self:
