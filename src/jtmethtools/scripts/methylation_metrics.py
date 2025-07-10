@@ -276,7 +276,7 @@ class ArgsStatsInRegions:
     }, )
     regions: Path = field(metadata=dict(
         required=True,
-        help="BED file with regions to calculate stats in.",
+        help="BED or TSV file with regions to calculate stats in.",
         aliases=["-r"]
     ))
     out_file:Path = field(metadata=dict(
@@ -297,7 +297,13 @@ class ArgsStatsInRegions:
 
 def cli_met_stats_in_regions():
     args = datargs.parse(ArgsStatsInRegions)
-    regions = Regions.from_bed(args.regions)
+    if args.regions.suffix == '.bed':
+        regions = Regions.from_bed(args.regions)
+    elif args.regions.suffix == '.tsv':
+        regions = Regions.from_file(args.regions)
+    else:
+        raise ValueError(f"Unsupported regions file format: {args.regions.suffix}. "
+                         "Only .bed and .tsv files are supported.")
 
     results = []
 
