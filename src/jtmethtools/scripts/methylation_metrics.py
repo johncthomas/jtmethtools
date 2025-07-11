@@ -246,7 +246,8 @@ def met_stats_of_regions(
                 continue
 
             for met in metstr:
-                if low_metstr == 'z':
+                low_met = met.lower()
+                if low_met == 'z':
                     results['TotalCpG'] += 1
                     if met == 'Z':
                         results['MethylatedCpG'] += 1
@@ -256,7 +257,7 @@ def met_stats_of_regions(
                         if met == 'Z':
                             results['MethylatedCpG_NoCpH'] += 1
 
-                elif low_metstr in {'x', 'h', 'u'}:
+                elif low_met in {'x', 'h', 'u'}:
                     results['TotalCh'] += 1
                     if met.isupper():
                         results['methylated_ch'] += 1
@@ -295,8 +296,9 @@ class ArgsStatsInRegions:
     )
 
 
-def cli_met_stats_in_regions():
-    args = datargs.parse(ArgsStatsInRegions)
+def cli_met_stats_in_regions(args:ArgsStatsInRegions=None):
+    if args is None:
+        args = datargs.parse(ArgsStatsInRegions)
     if args.regions.suffix == '.bed':
         regions = Regions.from_bed(args.regions)
     elif args.regions.suffix == '.tsv':
@@ -318,7 +320,7 @@ def cli_met_stats_in_regions():
 
     for bamfn in args.bams:
         bamfn = Path(bamfn)
-        logger.info(f"Calculating methylation stats for {bamfn} in {regions}")
+        logger.info(f"Calculating methylation stats for {bamfn} in {args.regions}")
         res = met_stats_of_regions(
             bamfn=bamfn,
             regions=regions,
@@ -335,7 +337,18 @@ def cli_met_stats_in_regions():
     import pandas as pd
     df = pd.DataFrame(results)
     df.to_csv(args.out_file, sep='\t', index=False)
+    logger.info(f"Results written to {args.out_file}")
 
+
+def ttest_statsin_regions():
+    home = str(Path.home())
+    bamfn = f'{home}/hdc-bigdata/data/Canary/bam/250301_twist-canary/sorted_coords/CMDL19003169.deduplicated.sorted.bam'
+    argtokens = f"-b {bamfn} -r ~/DevLab/NIMBUS/Reference/dmrs_extended_full_annotation_20200117.bed -o ~/hdc-bigdata/data/Canary/bam/metrics/250710.region-methylation".replace(
+        '~', home
+    ).split()
+    args = datargs.parse(ArgsStatsInRegions, argtokens)
+    cli_met_stats_in_regions(args)
 
 if __name__ == '__main__':
-    cli_met_stats_in_regions()
+    ttest_statsin_regions()
+    #cli_met_stats_in_regions()
