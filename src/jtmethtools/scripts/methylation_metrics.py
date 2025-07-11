@@ -258,14 +258,37 @@ def met_stats_of_regions(
                             results['MethylatedCpG_NoCpH'] += 1
 
                 elif low_met in {'x', 'h', 'u'}:
-                    results['TotalCh'] += 1
+                    results['TotalCpH'] += 1
                     if met.isupper():
-                        results['methylated_ch'] += 1
+                        results['MethylatedCpH'] += 1
     return results
 
 
 @datargs.argsclass(description="""\
 Get methylation stats from regions given by BED file.
+
+Output columns (order and presence may vary):
+    TotalReads: Total number of reads in the BAM, aligned or not.
+    AlignedHits: Number of aligned reads that overlap with the 
+        regions. All CpG and CpH stats calculated using these reads.
+    TotalCpG: Total number of CpGs in the aligned reads.
+    MethylatedCpG: Number of methylated CpGs in the aligned reads.
+    TotalCpG_NoCpH: Total number of CpGs in the aligned reads, after 
+        removing reads with CpH methylation.
+    MethylatedCpG_NoCpH: Number of methylated CpGs in the aligned 
+        reads, after removing reads with CpH methylation.
+    TotalCpH: Total number of CpHs in the aligned reads.
+    MethylatedCpH: Number of methylated CpHs in the aligned reads.
+    UnmappedReads: Number of reads that are not mapped.
+    MissesRegions: Number of aligned reads that do not overlap with 
+        the regions.
+    LowMapQ: Number of aligned reads with mapping quality below the 
+        minimum.
+    LowCpGs: Number of aligned reads with less than the minimum 
+        number of methylated CpGs.
+    
+Missing columns have zero  values. E.g. if you're not filtering by 
+mapping quality, the LowMapQ column will not be present.
 """)
 class ArgsStatsInRegions:
     """Command line arguments for methylation stats calculation."""
