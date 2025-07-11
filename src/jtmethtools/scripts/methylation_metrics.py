@@ -235,7 +235,7 @@ def met_stats_of_regions(
 
             metstr = jtm.alignments.get_bismark_met_str(aln)
             low_metstr = metstr.lower()
-            has_ch = any(met in {'x', 'h', 'u'} for met in low_metstr)
+            has_methylated_ch = any(met in {'X', 'H', 'U'} for met in metstr)
 
             if min_mapq and aln.mapping_quality < min_mapq:
                 results['LowMapQ'] += 1
@@ -252,7 +252,7 @@ def met_stats_of_regions(
                     if met == 'Z':
                         results['MethylatedCpG'] += 1
 
-                    if not has_ch:
+                    if not has_methylated_ch:
                         results['TotalCpG_NoCpH'] += 1
                         if met == 'Z':
                             results['MethylatedCpG_NoCpH'] += 1
@@ -332,7 +332,7 @@ def cli_met_stats_in_regions(args:ArgsStatsInRegions=None):
 
     results = []
 
-    logger.add(print, level='INFO', format="{time} {level} {message}",)
+    logger.add(print, level='INFO',)
 
     # create dir if requred
     out_dir = args.out_file.parent
