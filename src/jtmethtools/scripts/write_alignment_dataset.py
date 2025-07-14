@@ -40,13 +40,18 @@ def bam_to_parquet(args:WADArgs):
 
     from jtmethtools.alignment_data import AlignmentsData, logger
     dt = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    logger.add(args.outdir/f"log.{dt}.log", level='INFO')
+    # make log dir
+    logdir = args.outdir/'log'
+    if not logdir.exists():
+        logdir.mkdir(parents=True, exist_ok=True)
+    logger.add(logdir/f"{dt}.log", level='INFO')
     if not args.quiet:
         logger.add(print, level='INFO')
     logger.info('Write alignment dataset')
     logger.info(str(args))
 
     data = AlignmentsData.from_bam(args.bam, args.regions)
+    logger.info(f'Writing to {args.outdir}')
     data.to_dir(args.outdir)
 
 
