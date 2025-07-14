@@ -264,8 +264,13 @@ def met_stats_of_regions(
     return results
 
 
-@datargs.argsclass(description="""\
-Get methylation stats from regions given by BED file.
+import argparse
+from pathlib import Path
+
+def args_met_stats_in_regions():
+    description = """\
+Get methylation stats from regions given by BED file. Outputs a
+TSV file with the stats for each given BAM file.
 
 Output columns (order and presence may vary):
     TotalReads: Total number of reads in the BAM, aligned or not.
@@ -286,42 +291,49 @@ Output columns (order and presence may vary):
         minimum.
     LowCpGs: Number of aligned reads with less than the minimum 
         number of methylated CpGs.
-    
-Missing columns have zero  values. E.g. if you're not filtering by 
+
+Missing columns have zero values. E.g. if you're not filtering by 
 mapping quality, the LowMapQ column will not be present.
-""")
-class ArgsStatsInRegions:
-    """Command line arguments for methylation stats calculation."""
-    bams: list[Path] = field(metadata={
-        'help': 'Path to BAM files.',
-        'required': True,
-        'nargs': '+',
-        'aliases': ['-b'],
-    }, )
-    regions: Path = field(metadata=dict(
-        required=True,
-        help="BED or TSV file with regions to calculate stats in.",
-        aliases=["-r"]
-    ))
-    out_file:Path = field(metadata=dict(
-        required=True,
-        help='Output file to write the results to.',
-        aliases=['-o']
-    ))
+"""
 
-    min_mapq: int = field(
-        default=0,
-        metadata={'help': 'Minimum mapping quality to consider a read. (default: 0)'},
-    )
-    min_ncpg: int = field(
-        default=0,
-        metadata={'help': 'Minimum number of methylated CpGs to consider a read. (default: 0)'},
+    parser = argparse.ArgumentParser(
+        description=description,
+        # datargs doesn't support RawDescriptionHelpFormatter, so we use argparse directly
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
+    parser.add_argument('-b', '--bams',
+                        required=True,
+                        nargs='+',
+                        type=Path,
+                        help='Path to one or more BAM files.')
+    parser.add_argument('-r', '--regions',
+                        required=True,
+                        type=Path,
+                        help='BED or TSV file with regions to calculate stats in.')
+    parser.add_argument('-o', '--out-file',
+                        required=True,
+                        type=Path,
+                        help='Output file to write the results to.')
 
-def cli_met_stats_in_regions(args:ArgsStatsInRegions=None):
+    parser.add_argument('--min-mapq',
+                        type=int,
+                        default=0,
+                        help='Minimum mapping quality to consider a read. (default: 0)')
+    parser.add_argument('--min-ncpg',
+                        type=int,
+                        default=0,
+                        help='Minimum number of methylated CpGs to consider a read. (default: 0)')
+
+
+    return parser
+
+
+def cli_met_stats_in_regions(args=None):
     if args is None:
-        args = datargs.parse(ArgsStatsInRegions)
+        parser = args_met_stats_in_regions()
+        args = parser.parse_args()
+
     if args.regions.suffix == '.bed':
         regions = Regions.from_bed(args.regions)
     elif args.regions.suffix == '.tsv':
@@ -369,8 +381,9 @@ def ttest_statsin_regions():
     argtokens = f"-b {bamfn} -r ~/DevLab/NIMBUS/Reference/dmrs_extended_full_annotation_20200117.bed -o ~/hdc-bigdata/data/Canary/bam/metrics/250710.region-methylation".replace(
         '~', home
     ).split()
-    args = datargs.parse(ArgsStatsInRegions, argtokens)
-    cli_met_stats_in_regions(args)
+    #args = datargs.parse(ArgsStatsInRegions, argtokens)
+    parser = args_met_stats_in_regions()
+    cli_met_stats_in_regions(parser.parse_args(argtokens))
 
 if __name__ == '__main__':
     ttest_statsin_regions()
