@@ -605,10 +605,13 @@ def process_bam(bamfn, regionsfn:str|Path=None,
         filter_by_region = False
 
 
-    def check_hits_region(a) -> bool:
-        if filter_by_region:
+
+
+    if filter_by_region:
+        def check_hits_region(a) -> bool:
             return len(a.get_hit_regions(regions)) > 0
-        else:
+    else:
+        def check_hits_region(a) -> bool:
             return True
 
     chrm_map = {}
@@ -700,7 +703,7 @@ def process_bam(bamfn, regionsfn:str|Path=None,
         loci_arrays['readID'][position_i:position_j] = readID
         met_encoded = encode_metstr_bismark(aln.metstr)
         loci_arrays['methylation'][position_i:position_j] = met_encoded
-        s = list(aln.metstr.lower())
+        #s = list(aln.metstr.lower())
         iscpg =  np.array(list(aln.metstr.lower())) == 'z'
         loci_arrays['is_cpg'][position_i:position_j] = iscpg
         loci_arrays['is_insertion'][position_i:position_j] = ref_p ==  max_pos
