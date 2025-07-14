@@ -591,8 +591,7 @@ def print_memory_footprint():
     logger.info(f"Memory usage: {memory_usage_mb:.2f} MB")
 
 
-def process_bam(bamfn, regionsfn:str|Path,
-                filter_by_region=True,
+def process_bam(bamfn, regionsfn:str|Path=None,
                 include_read_name=False,
                 single_ended=False) -> AlignmentsData:
     logger.info(f"Processing BAM, {bamfn}")
@@ -602,10 +601,15 @@ def process_bam(bamfn, regionsfn:str|Path,
     n_bases = 0
     paired = not single_ended
 
-    if regionsfn.endswith('.tsv'):
-        regions = Regions.from_file(regionsfn)
+    if regionsfn is not None:
+        filter_by_region = True
+        if regionsfn.endswith('.tsv'):
+            regions = Regions.from_file(regionsfn)
+        else:
+            regions = Regions.from_bed(regionsfn)
     else:
-        regions = Regions.from_bed(regionsfn)
+        filter_by_region = False
+
 
     def check_hits_region(a) -> bool:
         if filter_by_region:

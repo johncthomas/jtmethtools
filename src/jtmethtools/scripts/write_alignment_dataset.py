@@ -23,7 +23,9 @@ class WADArgs:
         aliases=['-o']
     ))
     regions: Path = field(metadata=dict(
-        help='Alignments that overlap with regions will be written to the table.',
+        default=None,
+        help='Alignments that overlap with regions will be written to the table. '
+             'If not provided (default), all alignments will be written.',
         aliases=['-r']
     ))
 
