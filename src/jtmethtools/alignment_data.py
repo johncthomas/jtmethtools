@@ -1,3 +1,6 @@
+# implimentation is way more complicated than it could be here cus
+#   pyarrow hadn't been integrated into pandas when I wrote this.
+import collections
 import json
 import pathlib
 from os import PathLike
@@ -34,7 +37,8 @@ from jtmethtools.alignments import (
 from jtmethtools.classes import *
 
 from jtmethtools.util import (
-    logger
+    logger,
+    CANNONICAL_CHRM
 )
 
 logger.remove()
@@ -49,8 +53,9 @@ FalsePA = pa.scalar(False, type=pa.bool_())
 _ntcodes = dict(zip('ACGTN?', np.array([1, 2, 3, 4, 5, 0], dtype=np.uint8)))
 NT_CODES = _ntcodes | {v:k for k, v in _ntcodes.items()}
 
-_bsmk_codes = dict(zip('?.ZHXU', np.array([0, 1, 2, 3, 4, 5], dtype=np.uint8)))
-BISMARK_CODES = _bsmk_codes | {v:k for k, v in _bsmk_codes.items()}
+_bsmk_codes = '?.ZHXUzhxu'
+_bsmk_code_dict = dict(zip(_bsmk_codes, range(len(_bsmk_codes))))
+BISMARK_CODES = _bsmk_code_dict | {v:k for k, v in _bsmk_code_dict.items()}
 
 def _encode_string(string:Iterable[str], codes:dict) -> NDArray[np.uint8]:
     """Perform substitution of string to values in codes."""
@@ -439,7 +444,7 @@ class AlignmentsData:
         metadata = {
             'locus':self.locus_data.get_metadata(),
             'read':self.read_data.get_metadata(),
-            'bismark_codes':makeints(_bsmk_codes),
+            'bismark_codes':makeints(_bsmk_code_dict),
             'nucleotide_codes':makeints(_ntcodes),
             'alignments_data':self._get_nontable_attr()
         }
@@ -569,14 +574,14 @@ def get_insertion_mask(a:AlignedSegment,):
     return match_insertion_list
 
 
-def print_memory_footprint():
+def log_memory_footprint():
     import psutil
     import os
 
     # Get the current process
     process = psutil.Process(os.getpid())
 
-    # Get memory usage in bytes (can also use process.memory_info().rss for just resident memory)
+    # Get memory usage in bytes
     memory_usage = process.memory_info().rss  # in bytes
 
     # Convert to megabytes (MB) for easier readability
@@ -584,10 +589,15 @@ def print_memory_footprint():
 
     logger.info(f"Memory usage: {memory_usage_mb:.2f} MB")
 
+CHRMI = 0
+def process_bam(
+        bamfn,
+        regionsfn:str|Path=None,
+        include_read_name=False,
+        single_ended=False,
+        cannonical_chrm_only=True
+) -> AlignmentsData:
 
-def process_bam(bamfn, regionsfn:str|Path=None,
-                include_read_name=False,
-                single_ended=False) -> AlignmentsData:
     logger.info(f"Processing BAM, {bamfn}")
     regionsfn = str(regionsfn)
     # get the number of reads and the number of aligned bases
@@ -595,39 +605,46 @@ def process_bam(bamfn, regionsfn:str|Path=None,
     n_bases = 0
     paired = not single_ended
 
-    if regionsfn is not None:
-        filter_by_region = True
+    if (regionsfn is None) or (regionsfn == 'None'):
+        filtering_by_region = False
+    else:
+        filtering_by_region = True
         if regionsfn.endswith('.tsv'):
             regions = Regions.from_file(regionsfn)
         else:
             regions = Regions.from_bed(regionsfn)
-    else:
-        filter_by_region = False
 
-
-
-
-    if filter_by_region:
+    if filtering_by_region:
         def check_hits_region(a) -> bool:
             return len(a.get_hit_regions(regions)) > 0
     else:
-        def check_hits_region(a) -> bool:
-            return True
+        if cannonical_chrm_only:
+            def check_hits_region(a) -> bool:
+                return a.reference_name in CANNONICAL_CHRM
+        else:
+            def check_hits_region(a) -> bool:
+                return True
 
-    chrm_map = {}
-    for i, c in enumerate(regions.chromsomes):
-        chrm_map[i] = c
-        chrm_map[c] = i
 
-    logger.info('Chromsome\n')
-    logger.info(f"Chromosome codes = {chrm_map}")
+
+    # if filter_by_region:
+    #     chrm_map = {}
+    #     for i, c in enumerate(regions.chromsomes):
+    #         chrm_map[i] = c
+    #         chrm_map[c] = i
+
+    def nexti():
+        global CHRMI
+        CHRMI += 1
+        return CHRMI
+    chrm_map = collections.defaultdict(nexti)
 
     logger.info('Before creating creating empty arrays:')
-    print_memory_footprint()
+    log_memory_footprint()
 
     bam = AlignmentFile(bamfn)
 
-    logger.info('Counting number of reads that hit a region')
+    logger.info('Counting number of reads/bases to be included in output table.')
     idx_of_hits = set()
     for i, aln in enumerate(iter_bam(bam, paired_end=paired)):
         aln:Alignment
@@ -641,7 +658,7 @@ def process_bam(bamfn, regionsfn:str|Path=None,
                 n_bases += lmet
                 idx_of_hits.add(i)
 
-    logger.info(f"{n_reads} of {i} reads hit a region ({n_reads / i * 100:.2f}%). Table will have {n_bases} rows.")
+    logger.info(f"{n_reads} of {i} reads included ({n_reads / i * 100:.2f}%). Table will have {n_bases} rows.")
 
     read_arrays = {}
     for col in iter_read_cols():
@@ -660,14 +677,19 @@ def process_bam(bamfn, regionsfn:str|Path=None,
         )
 
     logger.info('After creating empty arrays:')
-    print_memory_footprint()
+    log_memory_footprint()
 
     max_pos = np.iinfo(POS_NP_DTYPE).max
     read_i = -1
     position_i_next = 0
     alignmentfile = pysam.AlignmentFile(bamfn)
+    discarded_non_cannonical = 0
     for readID, aln in enumerate(iter_bam(alignmentfile, paired_end=paired)):
         aln:Alignment
+
+        if cannonical_chrm_only and (aln.reference_name not in CANNONICAL_CHRM):
+            discarded_non_cannonical += 1
+            continue
 
         if not readID in idx_of_hits:
             continue
@@ -726,7 +748,7 @@ def process_bam(bamfn, regionsfn:str|Path=None,
         k: pa.array(v) for k, v in loci_arrays.items()
     }
     logger.info('max point probably')
-    print_memory_footprint()
+    log_memory_footprint()
     del loci_arrays
 
     loci_table = pa.Table.from_pydict(pa_loci_arrays)
@@ -740,12 +762,15 @@ def process_bam(bamfn, regionsfn:str|Path=None,
         chrm_map=chrm_map,
     )
     logger.info('Just before returning')
-    print_memory_footprint()
+    log_memory_footprint()
 
     logger.info('Reads: ', read_i, 'Locus: ', position_i_next)
 
     logger.info("Removing insertions...")
     loci_data.remove_insertions()
+
+    chrm_map = chrm_map | {v: k for k, v in chrm_map.items()}
+    logger.info(f"Chromosome codes = {chrm_map}")
 
     logger.info(f'Done processing {bamfn}.')
 
