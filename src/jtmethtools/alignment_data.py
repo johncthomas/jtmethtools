@@ -501,7 +501,6 @@ class AlignmentsData:
         # positions, but it also should be relatively small.
         return AlignmentsData(locuswindow, self.read_data, **self._get_nontable_attr())
 
-
     def filter_by_ncpg(self, min_cpg) -> Self:
         """Remove reads where read contains < min_cpg"""
         locus_data = self.locus_data.filter_cpg_per_read(min_cpg)
@@ -511,7 +510,6 @@ class AlignmentsData:
         )
         return AlignmentsData(locus_data, read_data,
                               **self._get_nontable_attr())
-
 
     def filter_by_mapping_quality(self, min_mapq:int) -> Self:
         """Remove reads where mapping_quality < min_mapq"""
@@ -526,7 +524,6 @@ class AlignmentsData:
             **self._get_nontable_attr()
         )
 
-
     def filter_by_noncpg_met(self, max_noncpg=0):
         """Remove reads with methylated non-CpG cytosines more than
         max_noncpg"""
@@ -537,9 +534,6 @@ class AlignmentsData:
 
         return AlignmentsData(locus_data, read_data,
                               **self._get_nontable_attr())
-
-
-
 
 
 # read ID used for padding row in generation of images
