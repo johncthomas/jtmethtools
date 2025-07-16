@@ -9,9 +9,10 @@ from attrs import define
 from functools import cached_property
 
 from jtmethtools.classes import Regions
+import sys
 
 logger.remove()
-
+logger.add(sys.stderr, level='WARNING', colorize=True)
 SplitTable = dict[str, pd.DataFrame]
 
 from pathlib import Path
