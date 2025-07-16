@@ -28,7 +28,7 @@ def set_logger(min_level='DEBUG'):
 
 type SplitTable = dict[str, pd.DataFrame]
 
-CANNONICAL_CHRM = [str(i) for i in range(1, 23)] + ['X', 'Y']
+CANNONICAL_CHRM = [str(i) for i in range(1, 23)] + ['X', 'Y', 'MT']
 CANNONICAL_CHRM += ['chr' + c for c in CANNONICAL_CHRM]
 CANNONICAL_CHRM = set(CANNONICAL_CHRM)
 
