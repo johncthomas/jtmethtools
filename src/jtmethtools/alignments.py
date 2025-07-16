@@ -20,6 +20,17 @@ Pathy = str|Path
 
 ALIGNMENT_ERROR_COUNT = 0
 
+__all__ = [
+    'Alignment',
+    'iter_bam',
+    'iter_bam_segments',
+    'get_bismark_met_str',
+    'write_bam_from_pysam',
+    'alignment_overlaps_region',
+    'flag_to_text',
+    'LocusValues',
+]
+
 
 def alignment_overlaps_region(
         alignment: AlignedSegment,
