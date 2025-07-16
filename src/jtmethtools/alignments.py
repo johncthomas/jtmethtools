@@ -525,11 +525,34 @@ def _iter_bam_se(
 
 
 def iter_bam_segments(
-    bam: str | Path | AlignmentFile,
-    paired_end: bool = True,
+        bam: str | Path | AlignmentFile,
+        paired_end: bool = True,
+        check_pairedness: bool = True,
 ) -> Iterable[Tuple[AlignedSegment, AlignedSegment|None]]:
+    """Iterate over a bam file, yielding pairs of alignments, or
+    (segment, None) when it's unpaired.
+
+    Supports SAM and BAM files automatically.
+
+    if check_pairedness, raises exception if bam is actually single-ended"""
+    bamfn = bam
     bam = _load_bam(bam)
     sorting_method = bam.header.get('HD', {}).get('SO', 'Unknown')
+    logger.info(f'{sorting_method=}')
+    if check_pairedness and paired_end:
+
+        any_paired = False
+        for i, a in enumerate(_iter_bam_se(bam)):
+            if a[0].is_paired:
+                any_paired = True
+                break
+            if i > 1000:
+                break
+        if not any_paired:
+            logger.warning(f"BAM file ({bamfn}) is not paired-end, but paired_end=True was set. "
+                           "Running as single-ended.")
+            paired_end = False
+
 
     if paired_end:
         if (sorting_method == 'queryname'):
@@ -537,12 +560,11 @@ def iter_bam_segments(
         elif (sorting_method == 'coordinate'):
             bamiter = _iter_pe_bam_unsorted(bam)
         else:
-            logger.warning(
-                "Paired end bam not sorted by queryname or coordinate - this might take a little longer and use a lot more memory.\n"
-                "If it's actually single-ended use the --single-ended option to avoid these issues.\n"
-                f" ({sorting_method=})"
+            raise RuntimeError(
+                "Paired end BAM not sorted by queryname or coordinate. "
+                "Use the --single-ended option.\n"
             )
-            bamiter = _iter_pe_bam_unsorted(bam)
+
     else:
         bamiter = _iter_bam_se(bam, )
     for aln in bamiter:
@@ -554,11 +576,11 @@ def iter_bam(
         bam:str|Path|AlignmentFile,
         paired_end:bool=True,
         kind='bismark',
-
+        check_pairedness: bool = True,
 ) -> Iterable[Alignment]:
     """Iterate over a bam file, yielding Alignments."""
 
-    for aln in iter_bam_segments(bam, paired_end):
+    for aln in iter_bam_segments(bam, paired_end, check_pairedness=check_pairedness):
         yield Alignment(*aln, kind=kind)
     return None
 
