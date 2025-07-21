@@ -161,6 +161,7 @@ def process_bam_methylation_data(
             'PhredScore': np.zeros(chunk_size, dtype=np.uint8),
             'Chrm': np.zeros(chunk_size, dtype=chrm_dtype),  # dictionary
             'Position': np.zeros(chunk_size, dtype=np.uint32),
+            'ReadPostion': np.zeros(chunk_size, dtype=np.uint32),
             'BismarkCode': np.zeros(chunk_size, dtype=np.int8),  # dictionary
         }
 
@@ -237,6 +238,8 @@ def process_bam_methylation_data(
                 current_locus_data['Chrm'][locus_cursor] = chrm_map[aln.reference_name]
                 current_locus_data['Position'][locus_cursor] = pos
                 current_locus_data['BismarkCode'][locus_cursor] = bismark_map[met]
+                current_locus_data['ReadPostion'][locus_cursor] = pos-aln.reference_start
+                #current_locus_data['IsForward'][locus_cursor] = aln.is_forward
 
                 locus_cursor += 1
 
