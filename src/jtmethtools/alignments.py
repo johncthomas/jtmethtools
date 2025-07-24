@@ -348,6 +348,7 @@ class Alignment:
                 a1_met = a1_metstr[a1_pos]
                 a2_met = a2_metstr[a2_pos]
 
+                # Keep the nucleotide with the highest quality
                 # (in the case that a1 and a2 have different nucleotides and
                 #   the phred is the same, we'll keep the a1 NT)
                 if a1_phred >= a2_phred:
@@ -447,7 +448,7 @@ class Alignment:
     def no_non_cpg(self) -> bool:
         """look for forbidden methylation states.
 
-        Return True no H|X."""
+        Return True no H|X|U."""
         values = set(self.metstr)
         if (
                 ('H' in values)
