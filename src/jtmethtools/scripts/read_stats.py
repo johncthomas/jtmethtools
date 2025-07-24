@@ -280,8 +280,9 @@ class ReadStatsArgs:
     ))
 
 
-def cli_pos_beta():
-    args = datargs.parse(ReadStatsArgs)
+def cli_pos_beta(args:ReadStatsArgs=None):
+    if args is None:
+        args = datargs.parse(ReadStatsArgs)
     if args.sample_name is None:
         samp = args.bamfn.stem+'.'
     else:
