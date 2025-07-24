@@ -1,17 +1,22 @@
+import collections
 import os
 from collections import Counter
-from typing import Callable, Tuple
+from typing import Callable, Tuple, Iterator
 
 import jtmethtools as jtm
+import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 from datetime import datetime
+
+import pysam
 from loguru import logger
 import dataclasses
-
+from scipy import stats, signal
 from jtmethtools import Regions
 from jtmethtools.alignments import Alignment, alignment_overlaps_region
+
 
 
 @dataclasses.dataclass
@@ -178,8 +183,9 @@ class ArgsPosMet:
             raise ValueError("At least one output must be allowed.")
 
 
-def cli_met_by_pos():
-    args = datargs.parse(ArgsPosMet)
+def cli_met_by_pos(args=None):
+    if args is None:
+        args = datargs.parse(ArgsPosMet)
     args.validate()
     os.makedirs(args.out_dir, exist_ok=True)
     result = methylation_by_position(args.bam, length=args.length, stopper=args.head,
@@ -196,24 +202,53 @@ def cli_met_by_pos():
         fig.savefig(str(prefix)+'met_by_position.png', bbox_inches='tight', dpi=150)
 
 
-def met_stats_of_regions(
-        bamfn: Path | str,
-        regions:Regions,
-        paired_end:bool=False,
-        min_mapq:int=0,
-        min_ncpg:int=0,
+# def ttest_big():
+#     bamfn = Path('/home/jcthomas/hdc-bigdata/data/ICGC_tissue/methylseq/2025-03-05-v3.0.0/bismark/deduplicated/CRUK_PC_0040_V02_T01_L_TUM_METH_B19.deduplicated.sorted.bam')
+#     outd = Path('/home/jcthomas/tmp/pos-met.250716/')
+#     args = datargs.parse(ArgsPosMet, f"--bam {bamfn} --out-dir {outd}".split(), )
+#     cli_met_by_pos(args)
 
-) -> Counter:
-    """Calculate methylation statistics of a filtered BAM file.
 
-    Number/proportion of aligned reads, and number of methylated CpG and CpH.
 
-    Probably makes sense to treat everything as single ended.
 
-    """
-    bam_iterer = jtm.alignments.iter_bam_segments(bamfn, paired_end=paired_end)
+# def iter_filter_v1(
+#         aln:Alignment,
+#         regions: Regions,
+#         min_mapq: int = 0,
+#         min_ncpg: int = 0,
+#         max_ch_methylation = False
+# ) -> Tuple[bool, str]:
+#
+#     if not aln.a.reference_name in regions.names:
+#         return False, 'Invalid chromosome'
+#
+#     if aln.a < min_mapq:
+#         return False, 'MAPQ failed'
+#
+#     if (max_ch_methylation is not False) and not aln.no_non_cpg():
+#         return False, "CpH methylation"
+#
+#     if aln.metstr.lower().count('z') < min_ncpg:
+#         return False, "Insufficient zZ"
+#
+#     if (not jtm.alignment_overlaps_region(aln.a, regions)) and \
+#             (aln.a2 is not not jtm.alignment_overlaps_region(aln.a2, regions)):
+#         return False, 'Misses regions'
+#
+#     return True, "PASS"
 
-    results = Counter()
+
+def iter_filtered_se_v2(
+        bamfn: Path,
+        regions: Regions,
+        counter: Counter,
+        min_mapq: int = 0,
+        min_ncpg: int = 0,
+) -> Iterator[pysam.AlignedSegment]:
+    bam_iterer = jtm.alignments.iter_bam_segments(
+        bamfn, paired_end=False
+    )
+
 
     for alns in bam_iterer:
         for aln in alns:
@@ -221,47 +256,98 @@ def met_stats_of_regions(
             if aln is None:
                 continue
 
-            results['TotalReads'] += 1
+            counter['TotalReads'] += 1
 
             if aln.is_unmapped:
-                results['UnmappedReads'] += 1
+                counter['UnmappedReads'] += 1
                 continue
 
             if not alignment_overlaps_region(aln, regions):
-                results['MissesRegions'] +=  1
+                counter['MissesRegions'] += 1
                 continue
 
-            results['AlignedHits'] += 1
+            counter['AlignedHits'] += 1
 
             metstr = jtm.alignments.get_bismark_met_str(aln)
             low_metstr = metstr.lower()
-            has_methylated_ch = any(met in {'X', 'H', 'U'} for met in metstr)
 
             if min_mapq and aln.mapping_quality < min_mapq:
-                results['LowMapQ'] += 1
+                counter['LowMapQ'] += 1
                 continue
 
             if min_ncpg and low_metstr.count('z') < min_ncpg:
-                results['LowCpGs'] += 1
+                counter['LowCpGs'] += 1
                 continue
 
-            for met in metstr:
-                low_met = met.lower()
-                if low_met == 'z':
-                    results['TotalCpG'] += 1
+            yield aln
+
+
+#
+# def met_stats_of_regions(
+#         ba m,
+#         regions: Regions,
+#         min_mapq: int = 0,
+#         min_ncpg: int = 0,
+# ):
+#     """Calculate coverage table from filtered BAM file.
+#
+#     Coverage table is a per locus count of CpG and CpH methylation."""
+#
+
+
+def met_stats_of_regions_v1(
+        bamfn: Path,
+        regions: Regions,
+        min_mapq: int = 0,
+        min_ncpg: int = 0,
+        get_loci_methylation=True
+) -> tuple[Counter, dict[Tuple[str, int], list[int]]]:
+    """Calculate methylation statistics of a filtered BAM file.
+
+    Number/proportion of aligned reads, and number of methylated CpG and CpH.
+
+    Probably makes sense to treat everything as single ended.
+
+    """
+    results = Counter()
+    if get_loci_methylation:
+        methylation_counts:dict[Tuple[str, int], list[int]] = collections.defaultdict(lambda : [0, 0]) # (methylated, total)
+    else:
+        methylation_counts = None
+
+    for aln in iter_filtered_se_v2(
+            bamfn, counter=results, regions=regions, min_mapq=min_mapq, min_ncpg=min_ncpg
+    ):
+        metstr = jtm.alignments.get_bismark_met_str(aln)
+        has_methylated_ch = any(c in {'X', 'H', 'U'} for c in metstr)
+
+        for q_pos, r_pos in aln.get_aligned_pairs(matches_only=True):
+
+            met = metstr[q_pos]
+            low_met = met.lower()
+
+            if low_met == 'z':
+                results['TotalCpG'] += 1
+                if met == 'Z':
+                    results['MethylatedCpG'] += 1
+
+                if not has_methylated_ch:
+                    results['TotalCpG_NoCpH'] += 1
                     if met == 'Z':
-                        results['MethylatedCpG'] += 1
+                        results['MethylatedCpG_NoCpH'] += 1
 
-                    if not has_methylated_ch:
-                        results['TotalCpG_NoCpH'] += 1
-                        if met == 'Z':
-                            results['MethylatedCpG_NoCpH'] += 1
+                if get_loci_methylation and (not has_methylated_ch):
+                    vals = methylation_counts[(aln.reference_name, r_pos)]
+                    if (met == 'Z'):
+                        vals[0] += 1
+                    else:
+                        vals[1] += 1
 
-                elif low_met in {'x', 'h', 'u'}:
-                    results['TotalCpH'] += 1
-                    if met.isupper():
-                        results['MethylatedCpH'] += 1
-    return results
+            elif low_met in {'x', 'h', 'u'}:
+                results['TotalCpH'] += 1
+                if met.isupper():
+                    results['MethylatedCpH'] += 1
+    return results, methylation_counts
 
 
 import argparse
@@ -291,6 +377,9 @@ Output columns (order and presence may vary):
         minimum.
     LowCpGs: Number of aligned reads with less than the minimum 
         number of methylated CpGs.
+    ModeLow: Mode of beta <= 0.6 
+    ModeHigh: Mode of beta > 0.6
+    
 
 Missing columns have zero values. E.g. if you're not filtering by 
 mapping quality, the LowMapQ column will not be present.
@@ -311,11 +400,10 @@ mapping quality, the LowMapQ column will not be present.
                         required=True,
                         type=Path,
                         help='BED or TSV file with regions to calculate stats in.')
-    parser.add_argument('-o', '--out-file',
+    parser.add_argument('-o', '--out-dir',
                         required=True,
                         type=Path,
-                        help='Output file to write the results to.')
-
+                        help='Output directory to write the results to.')
     parser.add_argument('--min-mapq',
                         type=int,
                         default=0,
@@ -323,10 +411,79 @@ mapping quality, the LowMapQ column will not be present.
     parser.add_argument('--min-ncpg',
                         type=int,
                         default=0,
-                        help='Minimum number of methylated CpGs to consider a read. (default: 0)')
-
+                        help='Minimum number of methylated CpGs to consider a read. '
+                             '(default: 0)')
+    parser.add_argument('--beta-plots',
+                        action='store_true',
+                        help='Plot the distribution of beta values and modes. '
+                             'Plots saved to $outdir/beta_plots/ with the BAM name as prefix. ')
+    parser.add_argument('--no-modes',
+                        action='store_true',
+                        help='Set to not calculate modes of beta values, speeding up operation.')
+    parser.add_argument('--min-depth',
+                        type=int,
+                        default=50,
+                        help='Minimum depth to include a CpG in the mode calculation. '
+                             '(default: 50)')
+    parser.add_argument('--quiet',
+                        action='store_true',
+                        help='Do not print progress messages to stdout.')
 
     return parser
+
+
+def upper_lower_mode(
+        values: pd.Series,
+        adjust: float = 1.0,
+        grid_n: int = 2048,
+        right_threshold: float = 0.6,
+        do_plot=False
+) -> Tuple[float, float]:
+    """
+    Returns (left_mode, right_mode) for a 0-1 bounded series.
+    args:
+        adjust: bandwidth multiplier (≈ R’s `adjust`)
+        grid_n: points in the KDE grid
+        right_threshold: x-value above which to look for the “upper” mode
+        do_plot: if True, make a plot
+    """
+    # Clean & clip
+    vals = values.dropna().to_numpy()
+    vals = vals[(vals >= 0) & (vals <= 1)]
+    if vals.size == 0:
+        return None, None
+
+    # Kernel density estimate
+    kde = stats.gaussian_kde(vals, bw_method='scott')
+    kde.set_bandwidth(kde.factor * adjust)
+
+    x = np.linspace(0, 1, grid_n)
+    y = kde(x)
+
+    # Local maxima (vectorised & fast)
+    peaks, _ = signal.find_peaks(y)
+    if peaks.size == 0:
+        return None, None
+
+    mode_x = x[peaks]
+    mode_y = y[peaks]
+
+    left_mode = mode_x[np.argmin(mode_x)]  # closest to 0
+    right_candidates = mode_x[mode_x > right_threshold]  # > 0.6 like the R code
+    right_mode = (
+        right_candidates[np.argmax(mode_y[mode_x > right_threshold])]
+        if right_candidates.size else None
+    )
+
+    if do_plot:
+        plt.plot(x, y)
+        ymin, ymax = plt.ylim()
+        plt.plot([left_mode, left_mode], [ymin, ymax], 'k--', lw=0.75, alpha=0.7)
+        plt.plot([right_mode, right_mode], [ymin, ymax], 'k--', lw=0.75, alpha=0.7)
+        # stop it expanding the limits
+        plt.ylim(ymin, ymax)
+
+    return left_mode, right_mode
 
 
 def cli_met_stats_in_regions(args=None):
@@ -343,42 +500,75 @@ def cli_met_stats_in_regions(args=None):
                          "Only .bed and .tsv files are supported.")
 
     results = []
-
-    logger.add(print, level='INFO',)
+    import sys
+    logger.add(sys.stdout, level='INFO', colorize=True)
+    if not args.quiet:
+        logdir = args.out_dir/'log'
+        logdir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        logger.add(logdir/f'{timestamp}.txt', level='INFO', )
 
     # create dir if requred
-    out_dir = args.out_file.parent
+    out_dir = args.out_dir
     if not out_dir.exists():
         logger.info(f"Creating output directory {out_dir}")
         out_dir.mkdir(parents=True, exist_ok=True)
+    if args.beta_plots is not None:
+        (out_dir/'beta_plots').mkdir(parents=True, exist_ok=True)
 
+    get_modes = not args.no_modes
 
     for bamfn in args.bams:
         bamfn = Path(bamfn)
         logger.info(f"Calculating methylation stats for {bamfn} in {args.regions}")
-        res = met_stats_of_regions(
+        res, loci_methylation = met_stats_of_regions_v1(
             bamfn=bamfn,
             regions=regions,
-
             min_mapq=args.min_mapq,
-            min_ncpg=args.min_ncpg
+            min_ncpg=args.min_ncpg,
+            get_loci_methylation=get_modes
         )
         res = dict(res)
         res['BAM'] = str(bamfn)
         res['Regions'] = str(args.regions)
+
+        if get_modes:
+            betas = pd.DataFrame(
+                loci_methylation.values(),
+                columns=['Methylated', 'Unmethylated']
+            )
+            betas['Obs'] = (betas['Methylated'] + betas['Unmethylated'])
+            betas = betas.loc[betas.Obs >= args.min_depth]
+            betas['Beta'] = betas['Methylated'] / betas.Obs
+
+            res['ModeLow'], res['ModeHigh'] = upper_lower_mode(
+                betas['Beta'],
+                grid_n=2048,
+                right_threshold=0.6,
+                do_plot=args.beta_plots
+            )
+            if args.beta_plots:
+                plt.savefig(
+                    out_dir/'beta_plots'/f"{bamfn.stem}.beta-distribution.png",
+                    bbox_inches='tight', dpi=150
+                )
+                plt.close()
+
         results.append(res)
 
     # write to TSV
-    import pandas as pd
+
     df = pd.DataFrame(results)
-    df.to_csv(args.out_file, sep='\t', index=False)
-    logger.info(f"Results written to {args.out_file}")
+    df.to_csv(args.out_dir/'methylation-stats.tsv', sep='\t', index=False)
+    logger.info(f"Results written to {args.out_dir}")
 
 
 def ttest_statsin_regions():
     home = str(Path.home())
     bamfn = f'{home}/hdc-bigdata/data/Canary/bam/250301_twist-canary/sorted_coords/CMDL19003169.deduplicated.sorted.bam'
-    argtokens = f"-b {bamfn} -r ~/DevLab/NIMBUS/Reference/dmrs_extended_full_annotation_20200117.bed -o ~/hdc-bigdata/data/Canary/bam/metrics/250710.region-methylation".replace(
+    regfn = '~/DevLab/NIMBUS/Reference/dmrs_extended_full_annotation_20200117.bed'
+    outd = '~/tmp/250724.region-methylation'
+    argtokens = f"-b {bamfn} -r {regfn} -o {outd} --beta-plots".replace(
         '~', home
     ).split()
     #args = datargs.parse(ArgsStatsInRegions, argtokens)
@@ -387,4 +577,5 @@ def ttest_statsin_regions():
 
 if __name__ == '__main__':
     ttest_statsin_regions()
+    #ttest_statsin_regions()
     #cli_met_stats_in_regions()
