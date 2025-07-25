@@ -2,7 +2,7 @@ import collections
 import os
 from collections import Counter
 from typing import Callable, Tuple, Iterator
-
+import json
 import jtmethtools as jtm
 import pandas as pd
 import numpy as np
@@ -29,7 +29,6 @@ class MethFreqResult:
 
     def to_df(self):
         """Convert the result to a pandas DataFrame."""
-        import pandas as pd
         data = {
             'Position': np.arange(self.length),
             'CpG_Methylated': self.cpg_methylated,
@@ -356,9 +355,9 @@ from pathlib import Path
 def args_met_stats_in_regions():
     description = """\
 Get methylation stats from regions given by BED file. Outputs a
-TSV file with the stats for each given BAM file.
+JSON file with the stats for each given BAM file.
 
-Output columns (order and presence may vary):
+Output keys (presence may vary):
     TotalReads: Total number of reads in the BAM, aligned or not.
     AlignedHits: Number of aligned reads that overlap with the 
         regions. All CpG and CpH stats calculated using these reads.
@@ -381,21 +380,20 @@ Output columns (order and presence may vary):
     ModeHigh: Mode of beta > 0.6
     
 
-Missing columns have zero values. E.g. if you're not filtering by 
-mapping quality, the LowMapQ column will not be present.
+Presence/absence of key depends on options. E.g. if you're not 
+filtering by mapping quality, the LowMapQ key will not be present.
 """
 
     parser = argparse.ArgumentParser(
         description=description,
-        # datargs doesn't support RawDescriptionHelpFormatter, so we use argparse directly
+        # raw description keeps the newlines.
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
-    parser.add_argument('-b', '--bams',
+    parser.add_argument('-b', '--bam',
                         required=True,
-                        nargs='+',
                         type=Path,
-                        help='Path to one or more BAM files.')
+                        help='Path to BAM file.')
     parser.add_argument('-r', '--regions',
                         required=True,
                         type=Path,
@@ -404,6 +402,11 @@ mapping quality, the LowMapQ column will not be present.
                         required=True,
                         type=Path,
                         help='Output directory to write the results to.')
+    parser.add_argument('-n', '--sample-name',
+                        type=str,
+                        default=None,
+                        help='Sample name to use in output files. '
+                             'Default is taken from the BAM name.')
     parser.add_argument('--min-mapq',
                         type=int,
                         default=0,
@@ -422,33 +425,27 @@ mapping quality, the LowMapQ column will not be present.
                         help='Set to not calculate modes of beta values, speeding up operation.')
     parser.add_argument('--min-depth',
                         type=int,
-                        default=50,
-                        help='Minimum depth to include a CpG in the mode calculation. '
-                             '(default: 50)')
-    parser.add_argument('--quiet',
+                        default=(dflt_depth:=50),
+                        help='Minimum depth to include a CpG in beta density calculation. '
+                             f'(default: {dflt_depth})'),
+    parser.add_argument('--record-density',
+                        action='store_true',
+                        help='Record the density of methylation betas. '
+                             'Will be saved in the JSON as "DensityX" and "DensityY".')
+    parser.add_argument('-q', '--quiet',
                         action='store_true',
                         help='Do not print progress messages to stdout.')
 
     return parser
 
 
-def upper_lower_mode(
-        values: pd.Series,
+def methylation_beta_density(
+        betas:pd.Series,
         adjust: float = 1.0,
         grid_n: int = 2048,
-        right_threshold: float = 0.6,
-        do_plot=False
-) -> Tuple[float, float]:
-    """
-    Returns (left_mode, right_mode) for a 0-1 bounded series.
-    args:
-        adjust: bandwidth multiplier (≈ R’s `adjust`)
-        grid_n: points in the KDE grid
-        right_threshold: x-value above which to look for the “upper” mode
-        do_plot: if True, make a plot
-    """
+) -> Tuple[np.ndarray, np.ndarray]:
     # Clean & clip
-    vals = values.dropna().to_numpy()
+    vals = betas.dropna().to_numpy()
     vals = vals[(vals >= 0) & (vals <= 1)]
     if vals.size == 0:
         return None, None
@@ -459,10 +456,26 @@ def upper_lower_mode(
 
     x = np.linspace(0, 1, grid_n)
     y = kde(x)
+    return x, y
+
+
+def lower_upper_mode(
+        x:np.ndarray, y:np.ndarray,
+        right_threshold: float = 0.6,
+) -> Tuple[float, float]:
+    """
+    Returns (left_mode, right_mode) for a 0-1 bounded series.
+    args:
+        adjust: bandwidth multiplier (≈ R’s `adjust`)
+        grid_n: points in the KDE grid
+        right_threshold: x-value above which to look for the “upper” mode
+        do_plot: if True, make a plot
+    """
 
     # Local maxima (vectorised & fast)
     peaks, _ = signal.find_peaks(y)
     if peaks.size == 0:
+        logger.warning("No modes found.")
         return None, None
 
     mode_x = x[peaks]
@@ -475,41 +488,71 @@ def upper_lower_mode(
         if right_candidates.size else None
     )
 
-    if do_plot:
-        plt.plot(x, y)
-        ymin, ymax = plt.ylim()
-        plt.plot([left_mode, left_mode], [ymin, ymax], 'k--', lw=0.75, alpha=0.7)
-        plt.plot([right_mode, right_mode], [ymin, ymax], 'k--', lw=0.75, alpha=0.7)
-        # stop it expanding the limits
-        plt.ylim(ymin, ymax)
-
     return left_mode, right_mode
 
 
+def plot_beta_distribution_modes(
+        x:np.ndarray,  y:np.ndarray,
+        lower_mode:float, upper_mode:float
+) -> None:
+
+    plt.plot(x, y)
+    ymin, ymax = plt.ylim()
+    plt.plot([lower_mode, lower_mode], [ymin, ymax], 'k--', lw=0.75, alpha=0.7)
+    plt.plot([upper_mode, upper_mode], [ymin, ymax], 'k--', lw=0.75, alpha=0.7)
+    # stop it expanding the limits
+    plt.ylim(ymin, ymax)
+    plt.xlabel('Beta value')
+    plt.ylabel('Density')
+
+    # textbox with modes
+    textstr = f'Lower mode: {lower_mode:.3f}\nUpper mode: {upper_mode:.3f}'
+    props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+    plt.gca().text(
+        0.5, 0.95, textstr,
+        transform=plt.gca().transAxes,
+        fontsize=9,
+        verticalalignment='top',
+        horizontalalignment='center',
+        bbox=props
+    )
+
+
 def cli_met_stats_in_regions(args=None):
+    import importlib.metadata
+    logger.info(
+        f"Version: {importlib.metadata.version('jtmethtools')}"
+    )
+
     if args is None:
         parser = args_met_stats_in_regions()
         args = parser.parse_args()
 
     if args.regions.suffix == '.bed':
         regions = Regions.from_bed(args.regions)
-    elif args.regions.suffix == '.tsv':
+    elif (args.regions.suffix == '.tsv') or (args.regions.suffix == '.txt'):
         regions = Regions.from_file(args.regions)
     else:
         raise ValueError(f"Unsupported regions file format: {args.regions.suffix}. "
-                         "Only .bed and .tsv files are supported.")
+                         "Only .bed or tab separated tables with .tsv|.txt are supported.")
 
-    results = []
+    bamfn = Path(args.bam)
+    sample_name = args.sample_name or bamfn.stem
+
     import sys
     logger.add(sys.stdout, level='INFO', colorize=True)
     if not args.quiet:
         logdir = args.out_dir/'log'
         logdir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        logger.add(logdir/f'{timestamp}.txt', level='INFO', )
+        logger.add(logdir/f'{sample_name}.{timestamp}.log', level='INFO', )
+
+    # print args
+    logger.info(f"Arguments: {args}")
 
     # create dir if requred
     out_dir = args.out_dir
+
     if not out_dir.exists():
         logger.info(f"Creating output directory {out_dir}")
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -518,57 +561,74 @@ def cli_met_stats_in_regions(args=None):
 
     get_modes = not args.no_modes
 
-    for bamfn in args.bams:
-        bamfn = Path(bamfn)
-        logger.info(f"Calculating methylation stats for {bamfn} in {args.regions}")
-        res, loci_methylation = met_stats_of_regions_v1(
-            bamfn=bamfn,
-            regions=regions,
-            min_mapq=args.min_mapq,
-            min_ncpg=args.min_ncpg,
-            get_loci_methylation=get_modes
+    logger.info(f"Calculating methylation stats for sample {sample_name} in {args.regions}")
+
+    # this is currently split in a weird way, first half is in the following function
+    #   call, but then a bunch is done after the call. This isn't ideal, but
+    #   I'm not going to refactor it right now.
+    res, loci_methylation = met_stats_of_regions_v1(
+        bamfn=bamfn,
+        regions=regions,
+        min_mapq=args.min_mapq,
+        min_ncpg=args.min_ncpg,
+        get_loci_methylation=get_modes
+    )
+    res = dict(res)
+    res['BAM'] = str(bamfn)
+    res['Regions'] = str(args.regions)
+
+    if get_modes or args.record_density:
+        logger.debug("Calculated betas and density x,y")
+        betas = pd.DataFrame(
+            loci_methylation.values(),
+            columns=['Methylated', 'Unmethylated']
         )
-        res = dict(res)
-        res['BAM'] = str(bamfn)
-        res['Regions'] = str(args.regions)
+        betas['Obs'] = (betas['Methylated'] + betas['Unmethylated'])
+        # filter betas by minimum depth
+        betas = betas.loc[betas.Obs >= args.min_depth]
+        betas['Beta'] = betas['Methylated'] / betas.Obs
+        density_x, density_y = methylation_beta_density(
+            betas['Beta'],
+        )
+        if args.record_density:
+            res['DensityX'] = density_x.tolist()
+            res['DensityY'] = density_y.tolist()
 
         if get_modes:
-            betas = pd.DataFrame(
-                loci_methylation.values(),
-                columns=['Methylated', 'Unmethylated']
-            )
-            betas['Obs'] = (betas['Methylated'] + betas['Unmethylated'])
-            betas = betas.loc[betas.Obs >= args.min_depth]
-            betas['Beta'] = betas['Methylated'] / betas.Obs
+            logger.debug("Getting modes")
 
-            res['ModeLow'], res['ModeHigh'] = upper_lower_mode(
-                betas['Beta'],
-                grid_n=2048,
-                right_threshold=0.6,
-                do_plot=args.beta_plots
+            low_mode, hi_mode = lower_upper_mode(
+                density_x, density_y,
             )
+            res['ModeLow'], res['ModeHigh'] = low_mode, hi_mode
             if args.beta_plots:
+                logger.info("Plotting beta distribution, modes.")
+                plot_beta_distribution_modes(density_x, density_y,
+                                             low_mode, hi_mode)
+                plt.title(f"Beta distribution\n{sample_name} in {args.regions.stem}")
+
                 plt.savefig(
-                    out_dir/'beta_plots'/f"{bamfn.stem}.beta-distribution.png",
+                    out_dir/'beta_plots'/f"{sample_name}.beta-distribution.png",
                     bbox_inches='tight', dpi=150
                 )
                 plt.close()
+        else:
+            logger.debug("Not getting modes.")
 
-        results.append(res)
+    # write res as a JSON
+    out_json = out_dir / f"{sample_name}.methylation_stats.json"
+    with open(out_json, 'w') as f:
+        json.dump(res, f, indent=4)
 
-    # write to TSV
-
-    df = pd.DataFrame(results)
-    df.to_csv(args.out_dir/'methylation-stats.tsv', sep='\t', index=False)
     logger.info(f"Results written to {args.out_dir}")
 
 
 def ttest_statsin_regions():
     home = str(Path.home())
-    bamfn = f'{home}/hdc-bigdata/data/Canary/bam/250301_twist-canary/sorted_coords/CMDL19003169.deduplicated.sorted.bam'
+    bamfn = f'{home}/hdc-bigdata/data/Canary/bam/250301_twist-canary/sorted_coords/CMDL19003184.deduplicated.sorted.bam'
     regfn = '~/DevLab/NIMBUS/Reference/dmrs_extended_full_annotation_20200117.bed'
-    outd = '~/tmp/250724.region-methylation'
-    argtokens = f"-b {bamfn} -r {regfn} -o {outd} --beta-plots".replace(
+    outd = '~/tmp/250725.region-methylation'
+    argtokens = f"-b {bamfn} -r {regfn} -s sample -o {outd} --beta-plots".replace(
         '~', home
     ).split()
     #args = datargs.parse(ArgsStatsInRegions, argtokens)
