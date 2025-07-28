@@ -402,7 +402,7 @@ filtering by mapping quality, the LowMapQ key will not be present.
                         required=True,
                         type=Path,
                         help='Output directory to write the results to.')
-    parser.add_argument('-n', '--sample-name',
+    parser.add_argument('-s', '--sample-name',
                         type=str,
                         default=None,
                         help='Sample name to use in output files. '
@@ -605,7 +605,7 @@ def cli_met_stats_in_regions(args=None):
                 logger.info("Plotting beta distribution, modes.")
                 plot_beta_distribution_modes(density_x, density_y,
                                              low_mode, hi_mode)
-                plt.title(f"Beta distribution\n{sample_name} in {args.regions.stem}")
+                plt.title(f"{sample_name}\n{args.regions.stem}")
 
                 plt.savefig(
                     out_dir/'beta_plots'/f"{sample_name}.beta-distribution.png",
