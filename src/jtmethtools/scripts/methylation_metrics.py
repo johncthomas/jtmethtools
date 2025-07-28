@@ -201,42 +201,6 @@ def cli_met_by_pos(args=None):
         fig.savefig(str(prefix)+'met_by_position.png', bbox_inches='tight', dpi=150)
 
 
-# def ttest_big():
-#     bamfn = Path('/home/jcthomas/hdc-bigdata/data/ICGC_tissue/methylseq/2025-03-05-v3.0.0/bismark/deduplicated/CRUK_PC_0040_V02_T01_L_TUM_METH_B19.deduplicated.sorted.bam')
-#     outd = Path('/home/jcthomas/tmp/pos-met.250716/')
-#     args = datargs.parse(ArgsPosMet, f"--bam {bamfn} --out-dir {outd}".split(), )
-#     cli_met_by_pos(args)
-
-
-
-
-# def iter_filter_v1(
-#         aln:Alignment,
-#         regions: Regions,
-#         min_mapq: int = 0,
-#         min_ncpg: int = 0,
-#         max_ch_methylation = False
-# ) -> Tuple[bool, str]:
-#
-#     if not aln.a.reference_name in regions.names:
-#         return False, 'Invalid chromosome'
-#
-#     if aln.a < min_mapq:
-#         return False, 'MAPQ failed'
-#
-#     if (max_ch_methylation is not False) and not aln.no_non_cpg():
-#         return False, "CpH methylation"
-#
-#     if aln.metstr.lower().count('z') < min_ncpg:
-#         return False, "Insufficient zZ"
-#
-#     if (not jtm.alignment_overlaps_region(aln.a, regions)) and \
-#             (aln.a2 is not not jtm.alignment_overlaps_region(aln.a2, regions)):
-#         return False, 'Misses regions'
-#
-#     return True, "PASS"
-
-
 def iter_filtered_se_v2(
         bamfn: Path,
         regions: Regions,
