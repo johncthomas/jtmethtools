@@ -412,7 +412,7 @@ def methylation_beta_density(
     vals = betas.dropna().to_numpy()
     vals = vals[(vals >= 0) & (vals <= 1)]
     if vals.size == 0:
-        return None, None
+        return np.array([]), np.array([])
 
     # Kernel density estimate
     kde = stats.gaussian_kde(vals, bw_method='scott')
