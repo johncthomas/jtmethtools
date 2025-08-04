@@ -440,7 +440,7 @@ def lower_upper_mode(
     peaks, _ = signal.find_peaks(y)
     if peaks.size == 0:
         logger.warning("No modes found.")
-        return None, None
+        return 0., 0.
 
     mode_x = x[peaks]
     mode_y = y[peaks]
