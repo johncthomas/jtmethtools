@@ -85,12 +85,32 @@ def split_table_by_chrm(table:pd.DataFrame, chrm_col='Chrm') \
 
 
 def load_region_bed(fn) -> pd.DataFrame:
+    """Load a BED file with regions.
+
+    Return a DataFrame indexed by region name. If present (and made
+    of unique values), the 4th column is used as the region name.
+    Otherwise region name is constructed in the Chrm:Start-End
+    format (zero-based).
+
+    Other columns are dropped."""
     regions = pd.read_csv(
         fn, sep='\t', header=None,
-        dtype={0:str}
+        dtype={0: str}
     )
-    regions.columns = ['Chrm', 'Start', 'End', 'Name', ]
 
+    # deal with the fact most of our bed files have names in the 4th column
+    #  but the contents after the 3rd column are not always the same.
+    if (regions.shape[1] > 3) and regions[3].is_unique:
+
+        # if the 4th column contains unique values, use it as names
+        regions = regions.iloc[:, :4]
+    else:
+        regions = regions.iloc[:, :3]
+        # otherwise use the first 3 columns as the region name
+        regions['Name'] = regions[0].astype(str) + ':' + \
+                          regions[1].astype(str) + '-' + regions[2].astype(str)
+
+    regions.columns = ['Chrm', 'Start', 'End', 'Name']
     regions.set_index('Name', inplace=True, drop=False)
     return regions
 
