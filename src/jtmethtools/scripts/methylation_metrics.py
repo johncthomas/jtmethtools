@@ -1,5 +1,6 @@
 import collections
 import os
+import typing
 from collections import Counter
 from typing import Callable, Tuple, Iterator
 import json
@@ -457,7 +458,7 @@ def lower_upper_mode(
 
 def plot_beta_distribution_modes(
         x:np.ndarray,  y:np.ndarray,
-        lower_mode:float, upper_mode:float
+        lower_mode:float, upper_mode:typing.Optional[float]
 ) -> None:
 
     plt.plot(x, y)
@@ -470,7 +471,10 @@ def plot_beta_distribution_modes(
     plt.ylabel('Density')
 
     # textbox with modes
-    textstr = f'Lower mode: {lower_mode:.3f}\nUpper mode: {upper_mode:.3f}'
+    if upper_mode is not None:
+        textstr = f'Lower mode: {lower_mode:.3f}\nUpper mode: {upper_mode:.3f}'
+    else:
+        textstr = f'Lower mode: {lower_mode:.3f}\nUpper mode: N/A'
     props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
     plt.gca().text(
         0.5, 0.95, textstr,
