@@ -47,9 +47,16 @@ class ArgsMethylationData:
              'If not provided (default), all alignments will be written.',
         aliases=['-r']
     ))
-    single_end: bool = field(default=False, metadata=dict(
-        help='Set if the BAM is not paired-end.',
-        aliases=['-s', '--se']
+    # either --se or --pe for sing/paired end
+    se: bool = field(metadata=dict(
+        default=False,
+        help='Set if the BAM file contains single-end reads. Either --se or --pe must be set.',
+        aliases=['--se', '--single-end']
+    ))
+    pe: bool = field(metadata=dict(
+        default=False,
+        help='Set if the BAM file contains paired-end reads. Either --se or --pe must be set.',
+        aliases=['--pe', '--paired-end']
     ))
     all_chrm: bool = field(metadata=dict(
         default=False,
@@ -76,6 +83,11 @@ def bam_to_parquet(args:ArgsMethylationData):
         write_methylation_dataset,
         logger,
     )
+
+    # check pe/se
+    if args.se == args.pe:
+        raise ValueError("Specify single-ended or paired-eneded with --se or --pe.")
+
     dt = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     # make log dir
     logdir = args.outdir/'log'
@@ -96,7 +108,7 @@ def bam_to_parquet(args:ArgsMethylationData):
     data = process_bam_methylation_data(
         bamfn=args.bam,
         regions=regions,
-        paired_end=not args.single_end,
+        paired_end=args.pe,
         cannonical_chrm_only=not args.all_chrm,
         include_unmethylated_ch=args.unmethylated_ch,
         chunk_size=int(1e6),
