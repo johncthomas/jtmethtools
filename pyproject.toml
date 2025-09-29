@@ -26,7 +26,7 @@ where = ["src"]
 
 [project.scripts]
 jtm-generate-images = "jtmethtools.scripts.generate_images:parse_args_and_run"
-jtm-write-alignment-data = "jtmethtools.scripts.write_alignment_dataset:main"
+#jtm-write-alignment-data = "jtmethtools.scripts.write_alignment_dataset:main"
 jtm-write-methylation-data = "jtmethtools.scripts.write_methylation_data:main"
 jtm-read-stats = "jtmethtools.scripts.read_stats:cli"
 jtm-filter-ch = "jtmethtools.scripts.filter_CH:main"
