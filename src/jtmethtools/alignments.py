@@ -540,31 +540,31 @@ def _iter_bam_se(
 def iter_bam_segments(
         bam: str | Path | AlignmentFile,
         paired_end: bool = True,
-        check_pairedness: bool = True,
+        check_pairedness: bool = False,
 ) -> Iterable[Tuple[AlignedSegment, AlignedSegment|None]]:
     """Iterate over a bam file, yielding pairs of alignments, or
     (segment, None) when it's unpaired.
 
     Supports SAM and BAM files automatically.
+    """
+    #if check_pairedness, raises exception if bam is actually single-ended"""
 
-    if check_pairedness, raises exception if bam is actually single-ended"""
-    bamfn = bam
     bam = _load_bam(bam)
     sorting_method = bam.header.get('HD', {}).get('SO', 'Unknown')
     logger.info(f'{sorting_method=}')
-    if check_pairedness and paired_end:
-
-        any_paired = False
-        for i, a in enumerate(_iter_bam_se(bam)):
-            if a[0].is_paired:
-                any_paired = True
-                break
-            if i > 1000:
-                break
-        if not any_paired:
-            logger.warning(f"BAM file ({bamfn}) is not paired-end, but paired_end=True was set. "
-                           "Running as single-ended.")
-            paired_end = False
+    # if check_pairedness and paired_end:
+    #
+    #     any_paired = False
+    #     for i, a in enumerate(_iter_bam_se(bam)):
+    #         if a[0].is_paired:
+    #             any_paired = True
+    #             break
+    #         if i > 1000:
+    #             break
+    #     if not any_paired:
+    #         logger.warning(f"BAM file ({bamfn}) is not paired-end, but paired_end=True was set. "
+    #                        "Running as single-ended.")
+    #         paired_end = False
 
 
     if paired_end:
@@ -575,7 +575,7 @@ def iter_bam_segments(
         else:
             raise RuntimeError(
                 "Paired end BAM not sorted by queryname or coordinate. "
-                "Use the --single-ended option.\n"
+                "Use sort it, or use the --single-ended option.\n"
             )
 
     else:
@@ -589,7 +589,7 @@ def iter_bam(
         bam:str|Path|AlignmentFile,
         paired_end:bool=True,
         kind='bismark',
-        check_pairedness: bool = True,
+        check_pairedness: bool = False,
 ) -> Iterable[Alignment]:
     """Iterate over a bam file, yielding Alignments."""
 
