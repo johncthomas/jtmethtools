@@ -10,22 +10,14 @@ from typing import (
     Iterable, Tuple
 )
 
-from functools import lru_cache
-
-import attrs
-
 import numpy as np
-
 from numpy.typing import NDArray
-
 import pysam
-from pysam import AlignedSegment, AlignmentFile
-
 import pyarrow as pa
-import pyarrow.compute as compute
+
 from pyarrow import parquet
 
-from attrs import define
+import pandas as pd
 
 from jtmethtools.alignments import (
     Alignment,
