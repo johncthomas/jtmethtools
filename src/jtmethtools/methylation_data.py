@@ -123,16 +123,21 @@ def process_bam_methylation_data(
     else:
         filtering_by_region = True
 
-    if filtering_by_region:
+    if cannonical_chrm_only and (not filtering_by_region):
+        def include_alignment(a) -> bool:
+            return a.reference_name in CANNONICAL_CHRM
+    elif cannonical_chrm_only and filtering_by_region:
+        def include_alignment(a) -> bool:
+            return (a.reference_name in CANNONICAL_CHRM) and (len(a.get_hit_regions(regions)) > 0)
+    elif not cannonical_chrm_only and filtering_by_region:
         def include_alignment(a) -> bool:
             return len(a.get_hit_regions(regions)) > 0
+    elif not cannonical_chrm_only and not filtering_by_region:
+        def include_alignment(a) -> bool:
+            return True
     else:
-        if cannonical_chrm_only:
-            def include_alignment(a) -> bool:
-                return a.reference_name in CANNONICAL_CHRM
-        else:
-            def include_alignment(a) -> bool:
-                return True
+        raise ValueError("Logic error in include_alignment definition. This should not happen.")
+
 
     if last_i == np.inf:
         # count em if we aren't processing a subset of the bam
