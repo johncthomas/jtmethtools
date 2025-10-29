@@ -64,6 +64,18 @@ MethylationReturnValues = collections.namedtuple(
     'MethylationReturnValues', ['locus_data', 'read_data']
 )
 
+def load_methylation_data(datdir):
+    datdir = Path(datdir)
+    # logger.info(f'loading methylation data for sample {sample}')
+    # datdir = bigdata/f'users/jct61/tasks/250709.pattern_count/methylation-data/ICGC_250714/{sample}'
+    locdat = pd.read_parquet(datdir / 'locus_data.parquet')
+    readdat = pd.read_parquet(datdir / 'read_data.parquet')
+    with open(datdir / 'metadata.json') as f:
+        metadat = json.load(f)
+
+    return locdat, readdat, metadat
+
+
 def process_bam_methylation_data(
         bamfn:Path|str,
         first_i:int=0,
