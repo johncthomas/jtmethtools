@@ -1,14 +1,15 @@
 import collections
 import json
 import pathlib
+import sys
 from os import PathLike
 import os
 from pathlib import Path
 from typing import (
     Self,
-    Iterator,
-    Iterable, Tuple
 )
+
+from collections.abc import Iterable
 
 import numpy as np
 from numpy.typing import NDArray
@@ -376,4 +377,294 @@ def write_methylation_tables(
 
 
 
+def sample_reads(
+        data:MethylationDataset,
+        n_reads:int,
+        with_replacement=False,
+        seed:int=None,
+) -> MethylationDataset:
+    """Sample reads from a methylation dataset."""
+    from copy import copy
+    locus_table, read_table, metadata = data.locus_data.copy(), data.read_data.copy(), copy(data.metadata)
 
+    for t in locus_table, read_table:
+        t.drop('__index_level_0__', axis=1, inplace=True, errors='ignore')
+
+    read_table.set_index('AlignmentIndex', inplace=True, drop=False)
+    locus_table = locus_table.loc[locus_table.AlignmentIndex.isin(read_table.AlignmentIndex)]
+
+    if seed is not None:
+        np.random.seed(seed)
+
+    sampled_alnidx = np.random.choice(
+        read_table.AlignmentIndex, size=n_reads, replace=with_replacement,
+    )
+
+    read_groups = locus_table.groupby('AlignmentIndex').groups
+
+    resamp_read_table = read_table.loc[sampled_alnidx].reset_index(drop=True)
+    resamp_read_table.loc[:, 'OldAlnIdx'] = resamp_read_table.AlignmentIndex
+    resamp_read_table.loc[:, 'AlignmentIndex'] = resamp_read_table.index
+
+    loc_rows = []
+    new_loc_alnIdx = []
+
+    for newidx, row in resamp_read_table.iterrows():
+        loc_rows_idx = read_groups[row.OldAlnIdx]
+        loc_rows.extend(loc_rows_idx)
+        new_loc_alnIdx.extend([newidx] * len(loc_rows_idx))
+
+    resamp_locus_table = locus_table.loc[loc_rows]
+    resamp_locus_table.loc[:, 'AlignmentIndex'] = new_loc_alnIdx
+
+    resamp_read_table.drop('OldAlnIdx', axis=1, inplace=True)
+
+    metadata.get('processes', []).append(
+        f'sample_reads: sampled {n_reads} with_replacement={with_replacement}'
+    )
+
+    methylation_data = MethylationDataset(
+        locus_data=resamp_locus_table,
+        read_data=resamp_read_table,
+        metadata=metadata
+    )
+
+    return methylation_data
+
+
+
+def synthetic_sample(
+        inputs:Iterable[tuple[str|Path, float, bool]],
+        target_reads:int,
+) -> MethylationDataset:
+    """Create a synthetic methylation dataset by combining multiple datasets.
+
+    Inputs is a list of tuples of (data_dir, proportion, with_replacement).
+
+    Total reads might end up slightly different due to rounding."""
+
+    logger.info(f"Creating synthetic sample with target reads: {target_reads}")
+
+    locus_tables = []
+    read_tables = []
+    total_reads = 0
+    metadata = {
+        'processes': ['create_synthetic_sample: ' + ', '.join([f'{p} from {d}' for d, p, _ in inputs])]
+    }
+
+    # normalise the proportions
+    total_proportion = sum([p for _, p, _ in inputs])
+    inputs = [(d, p / total_proportion, w) for d, p, w in inputs]
+
+    # log proportions
+    logger.info("Creating synthetic sample with the following inputs:\n" +
+                '\n'.join([f"  - {p:.1%} from {d} (with_replacement={w})" for d, p, w in inputs]))
+
+    for datdir, proportion, with_replacement in inputs:
+        data = MethylationDataset.from_dir(datdir)
+        n_reads = int(round(target_reads * proportion, 0))
+        sampled_data = sample_reads(data, n_reads, with_replacement=with_replacement)
+
+        # adjust AlignmentIndex in locus data
+        read_table = sampled_data.read_data
+        locus_table = sampled_data.locus_data
+
+        read_table.set_index('AlignmentIndex', inplace=True, drop=False)
+        locus_table = locus_table.loc[locus_table.AlignmentIndex.isin(read_table.AlignmentIndex)]
+
+        alnidx_map = {
+            old_idx: new_idx for new_idx, old_idx
+            in enumerate(read_table.AlignmentIndex, start=total_reads)
+        }
+
+        locus_table.loc[:, 'AlignmentIndex'] = locus_table.AlignmentIndex.map(alnidx_map)
+        read_table.loc[:, 'AlignmentIndex'] = read_table.AlignmentIndex.map(alnidx_map)
+
+        locus_tables.append(locus_table)
+        read_tables.append(read_table)
+
+        total_reads += len(read_table)
+
+    combined_locus_table = pd.concat(locus_tables, ignore_index=True)
+    combined_read_table = pd.concat(read_tables, ignore_index=True)
+
+    synthetic_data = MethylationDataset(
+        locus_data=combined_locus_table,
+        read_data=combined_read_table,
+        metadata=metadata
+    )
+
+    logger.info(f'Finished creating synthetic sample. Actual total reads: {total_reads}')
+
+    return synthetic_data
+
+def ttest_sample_reads():
+    logger.add(sys.stdout, level='INFO')
+    rdat = {'AlignmentIndex': {8: 8, 12: 12, 13: 13, 1866: 1866, 1867: 1867},
+            'Start': {8: 15995, 12: 16015, 13: 16019, 1866: 605302, 1867: 605305},
+            'End': {8: 16145, 12: 16164, 13: 16168, 1866: 605450, 1867: 605455},
+            'MappingQuality': {8: 31, 12: 31, 13: 31, 1866: 39, 1867: 39},
+            'Chrm': {8: '1', 12: '1', 13: '1', 1866: '1', 1867: '1'},
+            'IsForward': {8: False, 12: False, 13: False, 1866: False, 1867: False}}
+    test_read_table = pd.DataFrame.from_dict(rdat).reset_index(
+        drop=True)  # shouldn't be dependent on the index == AlignmentIndex
+
+    ldat = {
+        'AlignmentIndex': {0: 8, 1: 8, 2: 8, 3: 12, 4: 12, 5: 12, 6: 12, 7: 12, 8: 13, 9: 13, 10: 13, 11: 13, 12: 13,
+                           4339: 1866, 4340: 1866, 4341: 1866, 4342: 1866, 4343: 1867, 4344: 1867, 4345: 1867,
+                           4346: 1867},
+        'ReadNucleotide': {0: 'G', 1: 'G', 2: 'G', 3: 'G', 4: 'G', 5: 'G', 6: 'G', 7: 'G', 8: 'G', 9: 'G', 10: 'G',
+                           11: 'G', 12: 'G', 4339: 'A', 4340: 'A', 4341: 'A', 4342: 'A', 4343: 'A', 4344: 'A',
+                           4345: 'A', 4346: 'A'},
+        'PhredScore': {0: 41, 1: 41, 2: 41, 3: 41, 4: 41, 5: 37, 6: 41, 7: 41, 8: 41, 9: 41, 10: 41, 11: 41, 12: 41,
+                       4339: 41, 4340: 37, 4341: 32, 4342: 37, 4343: 41, 4344: 41, 4345: 37, 4346: 41},
+        'Chrm': {0: '1', 1: '1', 2: '1', 3: '1', 4: '1', 5: '1', 6: '1', 7: '1', 8: '1', 9: '1', 10: '1', 11: '1',
+                 12: '1', 4339: '1', 4340: '1', 4341: '1', 4342: '1', 4343: '1', 4344: '1', 4345: '1', 4346: '1'},
+        'Position': {0: 16057, 1: 16069, 2: 16081, 3: 16057, 4: 16069, 5: 16081, 6: 16138, 7: 16140, 8: 16057, 9: 16069,
+                     10: 16081, 11: 16138, 12: 16140, 4339: 605329, 4340: 605369, 4341: 605419, 4342: 605427,
+                     4343: 605329, 4344: 605369, 4345: 605419, 4346: 605427},
+        'BismarkCode': {0: 'Z', 1: 'Z', 2: 'Z', 3: 'Z', 4: 'Z', 5: 'Z', 6: 'Z', 7: 'Z', 8: 'Z', 9: 'Z', 10: 'Z',
+                        11: 'Z', 12: 'Z', 4339: 'z', 4340: 'z', 4341: 'z', 4342: 'z', 4343: 'z', 4344: 'z', 4345: 'z',
+                        4346: 'z'},
+        'PosFromLeft': {0: 63, 1: 75, 2: 87, 3: 43, 4: 55, 5: 67, 6: 124, 7: 126, 8: 39, 9: 51, 10: 63, 11: 120,
+                        12: 122, 4339: 28, 4340: 68, 4341: 118, 4342: 126, 4343: 25, 4344: 65, 4345: 115, 4346: 123},
+        'PosFromRight': {0: 87, 1: 75, 2: 63, 3: 106, 4: 94, 5: 82, 6: 25, 7: 23, 8: 110, 9: 98, 10: 86, 11: 29, 12: 27,
+                         4339: 120, 4340: 80, 4341: 30, 4342: 22, 4343: 125, 4344: 85, 4345: 35, 4346: 27},
+        'CH': {0: False, 1: False, 2: False, 3: False, 4: False, 5: False, 6: False, 7: False, 8: False, 9: False,
+               10: False, 11: False, 12: False, 4339: False, 4340: False, 4341: False, 4342: False, 4343: False,
+               4344: False, 4345: False, 4346: False},
+        'MetCpG': {0: True, 1: True, 2: True, 3: True, 4: True, 5: True, 6: True, 7: True, 8: True, 9: True, 10: True,
+                   11: True, 12: True, 4339: False, 4340: False, 4341: False, 4342: False, 4343: False, 4344: False,
+                   4345: False, 4346: False},
+        'IsCpG': {0: True, 1: True, 2: True, 3: True, 4: True, 5: True, 6: True, 7: True, 8: True, 9: True, 10: True,
+                  11: True, 12: True, 4339: True, 4340: True, 4341: True, 4342: True, 4343: True, 4344: True,
+                  4345: True, 4346: True}}
+    test_locus_table = pd.DataFrame.from_dict(ldat).reset_index(drop=True)
+
+    metadata = {'processes': ["Random small dataset for testing sample_reads"]}
+
+    test_data1 = MethylationDataset(
+        locus_data=test_locus_table,
+        read_data=test_read_table,
+        metadata=metadata
+    )
+
+    rdat2, ldat2 = (
+        {'AlignmentIndex': {1698: 1698, 1695: 1695, 898: 898, 528: 528, 943: 943},
+         'Start': {1698: 597730, 1695: 597726, 898: 138669, 528: 134898, 943: 138748},
+         'End': {1698: 597880, 1695: 597854, 898: 138819, 528: 135040, 943: 138898},
+         'MappingQuality': {1698: 38, 1695: 37, 898: 31, 528: 31, 943: 31},
+         'Chrm': {1698: '1', 1695: '1', 898: '1', 528: '1', 943: '1'},
+         'IsForward': {1698: True, 1695: True, 898: False, 528: True, 943: True}},
+        {'AlignmentIndex': {847: 528, 848: 528, 849: 528, 2362: 898, 2363: 898, 2417: 943, 3708: 1695, 3709: 1695,
+                            3710: 1695, 3711: 1695, 3712: 1695, 3713: 1695, 3714: 1695, 3728: 1698, 3729: 1698,
+                            3730: 1698, 3731: 1698, 3732: 1698, 3733: 1698, 3734: 1698, 3735: 1698},
+         'ReadNucleotide': {847: 'C', 848: 'T', 849: 'C', 2362: 'G', 2363: 'G', 2417: 'C', 3708: 'C', 3709: 'C',
+                            3710: 'C', 3711: 'C', 3712: 'C', 3713: 'C', 3714: 'T', 3728: 'C', 3729: 'C', 3730: 'C',
+                            3731: 'C', 3732: 'C', 3733: 'C', 3734: 'C', 3735: 'C'},
+         'PhredScore': {847: 41, 848: 41, 849: 41, 2362: 41, 2363: 41, 2417: 41, 3708: 41, 3709: 41, 3710: 41, 3711: 41,
+                        3712: 41, 3713: 41, 3714: 41, 3728: 41, 3729: 41, 3730: 37, 3731: 41, 3732: 41, 3733: 41,
+                        3734: 41, 3735: 41},
+         'Chrm': {847: '1', 848: '1', 849: '1', 2362: '1', 2363: '1', 2417: '1', 3708: '1', 3709: '1', 3710: '1',
+                  3711: '1', 3712: '1', 3713: '1', 3714: '1', 3728: '1', 3729: '1', 3730: '1', 3731: '1', 3732: '1',
+                  3733: '1', 3734: '1', 3735: '1'},
+         'Position': {847: 134998, 848: 135027, 849: 135030, 2362: 138720, 2363: 138780, 2417: 138780, 3708: 597746,
+                      3709: 597781, 3710: 597793, 3711: 597806, 3712: 597817, 3713: 597839, 3714: 597853, 3728: 597781,
+                      3729: 597793, 3730: 597806, 3731: 597817, 3732: 597839, 3733: 597853, 3734: 597862, 3735: 597864},
+         'BismarkCode': {847: 'Z', 848: 'z', 849: 'Z', 2362: 'Z', 2363: 'Z', 2417: 'Z', 3708: 'Z', 3709: 'Z', 3710: 'Z',
+                         3711: 'Z', 3712: 'Z', 3713: 'Z', 3714: 'z', 3728: 'Z', 3729: 'Z', 3730: 'Z', 3731: 'Z',
+                         3732: 'Z', 3733: 'Z', 3734: 'Z', 3735: 'Z'},
+         'PosFromLeft': {847: 100, 848: 129, 849: 132, 2362: 52, 2363: 112, 2417: 32, 3708: 20, 3709: 55, 3710: 67,
+                         3711: 80, 3712: 91, 3713: 113, 3714: 127, 3728: 51, 3729: 63, 3730: 76, 3731: 87, 3732: 109,
+                         3733: 123, 3734: 132, 3735: 134},
+         'PosFromRight': {847: 42, 848: 13, 849: 10, 2362: 98, 2363: 38, 2417: 118, 3708: 108, 3709: 73, 3710: 61,
+                          3711: 48, 3712: 37, 3713: 15, 3714: 1, 3728: 99, 3729: 87, 3730: 74, 3731: 63, 3732: 41,
+                          3733: 27, 3734: 18, 3735: 16},
+         'CH': {847: False, 848: False, 849: False, 2362: False, 2363: False, 2417: False, 3708: False, 3709: False,
+                3710: False, 3711: False, 3712: False, 3713: False, 3714: False, 3728: False, 3729: False, 3730: False,
+                3731: False, 3732: False, 3733: False, 3734: False, 3735: False},
+         'MetCpG': {847: True, 848: False, 849: True, 2362: True, 2363: True, 2417: True, 3708: True, 3709: True,
+                    3710: True, 3711: True, 3712: True, 3713: True, 3714: False, 3728: True, 3729: True, 3730: True,
+                    3731: True, 3732: True, 3733: True, 3734: True, 3735: True},
+         'IsCpG': {847: True, 848: True, 849: True, 2362: True, 2363: True, 2417: True, 3708: True, 3709: True,
+                   3710: True, 3711: True, 3712: True, 3713: True, 3714: True, 3728: True, 3729: True, 3730: True,
+                   3731: True, 3732: True, 3733: True, 3734: True, 3735: True}}
+    )
+
+    test_data2 = MethylationDataset(
+        locus_data=pd.DataFrame.from_dict(ldat2),
+        read_data=pd.DataFrame.from_dict(rdat2),
+        metadata=metadata,
+    )
+
+    od1 = Path.home()/'tmp/test_mdat1_hroqwei'
+    od2 = Path.home()/'tmp/test_mdat2_fhboqwei'
+    od1.mkdir(exist_ok=True)
+    od2.mkdir(exist_ok=True)
+
+    test_data1.write_to_dir(od1)
+    test_data2.write_to_dir(od2)
+
+    d = synthetic_sample(
+        [
+            (od1, 0.8, True),
+            (od2, 0.2, True)
+        ],
+        5000
+    )
+
+    import shutil
+    shutil.rmtree(od1)
+    shutil.rmtree(od2)
+
+    ratio = d.read_data.Start.isin(test_data1.read_data.Start.values).sum() / d.read_data.shape[0]
+    assert abs(ratio - 0.8) < 0.001
+    assert abs(d.read_data.shape[0] - 5000) < 5
+
+
+
+    logger.info("ttest_sample_reads passed.")
+
+
+def cli_synthetic_sample():
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Create a synthetic methylation dataset by combining multiple datasets."
+    )
+    parser.add_argument(
+        '--inputs', '-i',
+        nargs=3,
+        action='append',
+        metavar=('DATA_DIR', 'PROPORTION', 'WITH_REPLACEMENT'),
+        required=True,
+        help="Input dataset directory, proportion (float), and whether to sample with replacement ('y'/'n'). "
+             "Can be specified multiple times for multiple input datasets."
+    )
+    parser.add_argument(
+        '--total-reads', '-n',
+        type=int,
+        required=True,
+        help="Target number of reads in the synthetic dataset. May be slightly different due to rounding."
+    )
+    parser.add_argument(
+        '--output-dir', '-o',
+        type=str,
+        required=True,
+        help="Output directory for the synthetic dataset."
+    )
+
+    args = parser.parse_args()
+
+    inputs = []
+    for datdir, prop, wrep in args.inputs:
+        inputs.append((datdir, float(prop), wrep.lower()[0] in ('t', 'y', '1')))
+
+    synthetic_data = synthetic_sample(
+        inputs=inputs,
+        target_reads=args.target_reads
+    )
+
+    logger.info(f"Writing synthetic dataset to {args.output_dir}")
+
+    synthetic_data.write_to_dir(args.output_dir)
