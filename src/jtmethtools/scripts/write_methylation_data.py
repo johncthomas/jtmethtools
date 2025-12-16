@@ -115,18 +115,13 @@ def bam_to_parquet(args:ArgsMethylationData):
     )
     logger.info(f'Writing to {args.outdir}')
 
-    metadata = {
-        'bam_file': str(args.bam),
-        'regions_file': str(args.regions) if args.regions else None,
-        'time_started': dt,
-        'time_finished': timestamp(),
-    }
+
 
     write_methylation_dataset(
         args.outdir,
         data.locus_data,
         data.read_data,
-        metadata,
+        data.metadata
     )
 
 
