@@ -137,9 +137,13 @@ class CpGIndex:
             region_names: tuple[str, ...] = None
     ) -> Self:
         """Create a CpGIndex from a list of (chromosome, position) tuples."""
-        pos2index = MappingProxyType({
+        pos2index = {
             pos: idx for idx, pos in enumerate(cpg_list)
-        })
+        }
+        pos2index = pos2index | {
+            (c, p+1): idx for idx, (c, p) in enumerate(cpg_list)
+        }
+        pos2index = MappingProxyType(pos2index)
         return cls(cpg_list=tuple(cpg_list), locus2index=pos2index, region_names=region_names)
 
     @classmethod
