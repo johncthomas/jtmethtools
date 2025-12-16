@@ -35,6 +35,31 @@ from jtmethtools.alignments import iter_bam_segments
 
 logger.remove()
 
+def table2df(table: pa.Table) -> pd.DataFrame:
+    mapping = {schema.type: pd.ArrowDtype(schema.type) for schema in table.schema}
+
+    return table.to_pandas(types_mapper=mapping.get, ignore_metadata=True)
+
+
+def read_parquet(fn) -> pd.DataFrame:
+    """load a parquet file and convert to a pandas dataframe.
+    Works when pd.read_parquet fails on the dictionary types."""
+    tls = pa.parquet.read_table(fn)
+    tls = table2df(tls)
+    return tls
+
+
+def _load_methylation_data_reliable(datdir):
+    datdir = Path(datdir)
+    # logger.info(f'loading methylation data for sample {sample}')
+    # datdir = bigdata/f'users/jct61/tasks/250709.pattern_count/methylation-data/ICGC_250714/{sample}'
+    locdat = read_parquet(datdir / 'locus_data.parquet')
+    readdat = read_parquet(datdir / 'read_data.parquet')
+    with open(datdir / 'metadata.json') as f:
+        metadat = json.load(f)
+
+    return locdat, readdat, metadat
+
 
 def log_memory_footprint():
     import psutil
@@ -52,16 +77,60 @@ def log_memory_footprint():
     logger.info(f"Memory usage: {memory_usage_mb:.2f} MB")
 
 
-MethylationReturnValues = collections.namedtuple(
-    'MethylationReturnValues', ['locus_data', 'read_data']
-)
+class MethylationDataset:
+    def __init__(
+            self,
+            locus_data:pd.DataFrame,
+            read_data:pd.DataFrame,
+            metadata:dict,
+            name:str=None,
+    ):
+        self.locus_data = locus_data
+        self.read_data = read_data
+        self.metadata = metadata
+        self.name = name
+
+    @classmethod
+    def from_dir(cls, datdir:Path|str) -> Self:
+        datdir = Path(datdir)
+        locdat, readdat, metadat = load_methylation_data(datdir)
+        return cls(
+            locus_data=locdat,
+            read_data=readdat,
+            metadata=metadat,
+            name=datdir.name,
+        )
+
+    def write_to_dir(self, outdir:Path|str, create_outdir=True) -> None:
+        outdir = Path(outdir)
+        if create_outdir:
+            outdir.mkdir(parents=True, exist_ok=True)
+        self.locus_data.to_parquet(outdir/'locus_data.parquet')
+        self.read_data.to_parquet(outdir/'read_data.parquet')
+        with open(outdir/'metadata.json', 'w') as f:
+            json.dump(self.metadata, f, indent=4)
+
+    # getitem to allow tuple unpacking, e.g. locus, read, meta = dataset
+    def __getitem__(self, index):
+        if index == 0:
+            return self.locus_data
+        elif index == 1:
+            return self.read_data
+        elif index == 2:
+            return self.metadata
+        else:
+            raise IndexError("MethylationDataset only has three items: locus_data, read_data, metadata.")
+
+
 
 def load_methylation_data(datdir):
     datdir = Path(datdir)
-    # logger.info(f'loading methylation data for sample {sample}')
-    # datdir = bigdata/f'users/jct61/tasks/250709.pattern_count/methylation-data/ICGC_250714/{sample}'
-    locdat = pd.read_parquet(datdir / 'locus_data.parquet')
-    readdat = pd.read_parquet(datdir / 'read_data.parquet')
+    try:
+        locdat = pd.read_parquet(datdir / 'locus_data.parquet')
+        readdat = pd.read_parquet(datdir / 'read_data.parquet')
+    except ValueError:
+        # not sure why we sometimes get the ValueError: Dictionary type not supported error
+        locdat, readdat, metadat = _load_methylation_data_reliable(datdir)
     with open(datdir / 'metadata.json') as f:
         metadat = json.load(f)
 
@@ -77,7 +146,7 @@ def process_bam_methylation_data(
         cannonical_chrm_only=True,
         include_unmethylated_ch=False,
         chunk_size=int(1e6),
-) -> MethylationReturnValues:
+) -> MethylationDataset:
 
     logger.info(f"Processing BAM, {bamfn}, {first_i}-{last_i}.")
 
@@ -275,20 +344,21 @@ def process_bam_methylation_data(
     logger.info('Finished processing alignments.')
     log_memory_footprint()
 
-    return MethylationReturnValues(
+    return MethylationDataset(
         locus_data=locus_table, read_data=read_table
     )
 
 
-def write_methylation_dataset(
+def write_methylation_tables(
         outdir:Path|str,
         locus_table:pa.Table,
         read_table:pa.Table,
         metadata:dict=None,
+        create_outdir:bool=True,
 ) -> None:
     """Write the methylation dataset to a directory."""
     outdir = Path(outdir)
-    if not outdir.exists():
+    if not outdir.exists() and create_outdir:
         outdir.mkdir(parents=True, exist_ok=True)
 
     # write the locus data
