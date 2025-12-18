@@ -6,6 +6,8 @@ import numpy as np
 from numpy.typing import NDArray
 from jtmethtools.alignments import iter_bam_segments
 from loguru import logger
+from datargs import argsclass, parse
+from dataclasses import field
 
 BamReader = Iterable[tuple[AlignedSegment, AlignedSegment|None]]
 
@@ -295,8 +297,7 @@ twoCHH2\t2\t1\t104\t22\t10M\t*\t0\t10\tTTCTTCTTTT\tABCDEFGHIJ\tNM:i:tag0\tMD:Z:t
         output_paired=False,
     )
 
-from datargs import argsclass, parse
-from dataclasses import field
+
 @argsclass(
     description="""\
 Write a BAM that is a synthetic mixture of input BAM files according to specified proportions.
@@ -323,22 +324,19 @@ class SyntheticMixtureArgs:
         aliases=['-o'],
     ))
     pe: bool = field(metadata=dict(
-        default=False,
+
         help="Set if the *output* BAM should be paired-end. Either --pe or --se must be set. "
              "Single-ended inputs will be duplicated to make pairs if --pe is set. "
              "If --se is set, paired-ended inputs will have the first read written only.",
         aliases=['--paired', '--pe'],
-    ))
+    ), default=False,)
     se: bool = field(metadata=dict(
-        default=False,
         help="Set if the *output* BAM should be single-end.",
         aliases=['--single', '--se'],
-    ))
+    ), default=False,)
     seed: int = field(metadata=dict(
-        default=None,
         help="Random seed for reproducibility.",
-        aliases=['--seed'],
-    ))
+    ), default=None,)
 
 def cli(args: SyntheticMixtureArgs):
 
@@ -359,8 +357,6 @@ def cli(args: SyntheticMixtureArgs):
         replacement = parts[2].strip().upper().startswith('T')
         paired = parts[3].strip().upper() == 'T'
         inputs.append((input_bam, proportion, replacement, paired))
-
-
 
     create_synthetic_bam(
         inputs=inputs,
