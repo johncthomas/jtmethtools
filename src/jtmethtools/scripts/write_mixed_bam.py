@@ -25,8 +25,8 @@ def write_sampled_alignments(
         bam_reader:BamReader,
         bam_writer:pysam.AlignmentFile,
         sampled_indices:Collection[int],
-        paired:bool,
         replacement:bool,
+        output_paired:bool,
         new_qname_prefix:str=None
 ):
     """Write sampled alignments from a BAM reader to a BAM .
@@ -59,8 +59,11 @@ def write_sampled_alignments(
                 except AttributeError:
                     pass
             bam_writer.write(a1)
-            if paired and a2 is not None:
-                bam_writer.write(a2)
+            if output_paired:
+                if a2 is not None:
+                    bam_writer.write(a2)
+                else:
+                    bam_writer.write(a1)
 
     elif replacement:
         values, counts = np.unique(np.asarray(sampled_indices, dtype=int), return_counts=True)
@@ -81,14 +84,18 @@ def write_sampled_alignments(
                 except AttributeError:
                     pass
                 bam_writer.write(a1)
-                if paired and a2 is not None:
-                    bam_writer.write(a2)
+                if output_paired:
+                    if a2 is not None:
+                        bam_writer.write(a2)
+                    else:
+                        bam_writer.write(a1)
 
 
 def create_synthetic_bam(
         inputs:Iterable[tuple[str|Path, float, bool, bool]],
         total_reads:int,
         output_bam:Path,
+        output_paired:bool,
         seed=None,
         use_filestem_as_prefix:bool=True
 ) -> None:
@@ -98,6 +105,10 @@ def create_synthetic_bam(
         inputs: Gives (input_bam, proportion, replacement, paired) for each input BAM.
         total_reads: Total number of reads in the output BAM.
         output_bam: Path to the output BAM file.
+        output_paired: When True single ended inputs are written twice. When False
+            only the first read of a pair is written.
+        use_filestem_as_prefix: If True, use the stem of BAM file name as
+            the prefix for output read names. If False, use original read names.
         seed: Optional random seed for reproducibility.
     """
     if seed is not None:
@@ -149,9 +160,9 @@ def create_synthetic_bam(
                     reader,
                     out_bam,
                     sampled_indices,
-                    paired,
                     replacement=replace,
-                    new_qname_prefix=prfx
+                    new_qname_prefix=prfx,
+                    output_paired=output_paired,
                 )
     finally:
         template.close()
@@ -227,7 +238,8 @@ twoCHH2\t2\t1\t104\t22\t10M\t*\t0\t10\tTTCTTCTTTT\tABCDEFGHIJ\tNM:i:tag0\tMD:Z:t
         inputs=inputs_equal,
         total_reads=30,
         output_bam=Path(tmp_path/"out_repl_30.bam"),
-        seed=seed
+        seed=seed,
+        output_paired=False,
     )
 
     # 2) Without replacement: total 10 (should produce 10 output alignments)
@@ -239,7 +251,8 @@ twoCHH2\t2\t1\t104\t22\t10M\t*\t0\t10\tTTCTTCTTTT\tABCDEFGHIJ\tNM:i:tag0\tMD:Z:t
         inputs=inputs_no_replace,
         total_reads=10,
         output_bam=Path(tmp_path/"out_no_repl_10.bam"),
-        seed=seed
+        seed=seed,
+        output_paired=False,
     )
 
     # 3) Trigger the ValueError for not-enough-reads (catch and write an .err file)
@@ -248,7 +261,8 @@ twoCHH2\t2\t1\t104\t22\t10M\t*\t0\t10\tTTCTTCTTTT\tABCDEFGHIJ\tNM:i:tag0\tMD:Z:t
             inputs=inputs_no_replace,
             total_reads=100,  # should be too many
             output_bam=Path(tmp_path/"out_should_error.bam"),
-            seed=seed
+            seed=seed,
+            output_paired=False,
         )
 
 
@@ -263,7 +277,8 @@ twoCHH2\t2\t1\t104\t22\t10M\t*\t0\t10\tTTCTTCTTTT\tABCDEFGHIJ\tNM:i:tag0\tMD:Z:t
         total_reads=10,
         output_bam=Path(tmp_path/"out_no_prefix_repl.bam"),
         seed=seed,
-        use_filestem_as_prefix=False
+        use_filestem_as_prefix=False,
+        output_paired=False,
     )
 
     # no-replacement case (prefix None)
@@ -276,7 +291,8 @@ twoCHH2\t2\t1\t104\t22\t10M\t*\t0\t10\tTTCTTCTTTT\tABCDEFGHIJ\tNM:i:tag0\tMD:Z:t
         total_reads=10,
         output_bam=Path(tmp_path/"out_no_prefix_no_repl.bam"),
         seed=seed,
-        use_filestem_as_prefix=False
+        use_filestem_as_prefix=False,
+        output_paired=False,
     )
 
 from datargs import argsclass, parse
@@ -306,6 +322,18 @@ class SyntheticMixtureArgs:
         help="Output BAM file path.",
         aliases=['-o'],
     ))
+    pe: bool = field(metadata=dict(
+        default=False,
+        help="Set if the *output* BAM should be paired-end. Either --pe or --se must be set. "
+             "Single-ended inputs will be duplicated to make pairs if --pe is set. "
+             "If --se is set, paired-ended inputs will have the first read written only.",
+        aliases=['--paired', '--pe'],
+    ))
+    se: bool = field(metadata=dict(
+        default=False,
+        help="Set if the *output* BAM should be single-end.",
+        aliases=['--single', '--se'],
+    ))
     seed: int = field(metadata=dict(
         default=None,
         help="Random seed for reproducibility.",
@@ -314,6 +342,8 @@ class SyntheticMixtureArgs:
 
 def cli(args: SyntheticMixtureArgs):
 
+    if args.pe == args.se:
+        raise ValueError("Either --pe or --single must be set, but not both.")
 
     # split out the inputs
     inputs = []
@@ -336,7 +366,8 @@ def cli(args: SyntheticMixtureArgs):
         inputs=inputs,
         total_reads=args.total_reads,
         output_bam=args.out,
-        seed=args.seed
+        seed=args.seed,
+        output_paired=args.pe,
     )
 
 if __name__ == "__main__":
