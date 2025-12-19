@@ -383,12 +383,12 @@ def cli(clargs=None):
 
         replacement = parts[2].upper()
         if not replacement.startswith(('R', 'N')):
-            raise ValueError(f"WITH_REPLACEMENT must be 'R' for Replacement or 'N' for Not. Input was '{input_str}'.")
+            raise ValueError(f"WITH_REPLACEMENT must be 'R' for Replacement or 'N' for Not. Input was {parts}.")
         replacement = replacement.startswith('R')
 
         paired = parts[3].upper()
         if not paired.startswith(('P', 'S')):
-            raise ValueError(f"PAIRED must be 'P' for Paired-end or 'S' for Single-end. Input was '{input_str}'.")
+            raise ValueError(f"PAIRED must be 'P' for Paired-end or 'S' for Single-end. Input was {parts}.")
         paired = paired.startswith('P')
 
 
