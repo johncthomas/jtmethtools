@@ -6,8 +6,7 @@ import numpy as np
 from numpy.typing import NDArray
 from jtmethtools.alignments import iter_bam_segments
 from loguru import logger
-from datargs import argsclass, parse
-from dataclasses import field
+import argparse
 
 BamReader = Iterable[tuple[AlignedSegment, AlignedSegment|None]]
 
@@ -212,7 +211,7 @@ oneCHH2\t2\t1\t104\t22\t10M\t*\t0\t10\tTTCTTTTTTT\tABCDEFGHIJ\tNM:i:tag0\tMD:Z:t
 twoCHH2\t2\t1\t104\t22\t10M\t*\t0\t10\tTTCTTCTTTT\tABCDEFGHIJ\tNM:i:tag0\tMD:Z:tag1\tXM:Z:..H..H....
 """
 
-    tmp_path = Path("/home/jcthomas/tmp/synthetic_sample_test/")
+    tmp_path = Path.home()/"tmp/synthetic_sample_test/"
     tmp_path.mkdir(parents=True, exist_ok=True)
 
     sam_path_t = "test_synthetic{}.sam"
@@ -297,65 +296,102 @@ twoCHH2\t2\t1\t104\t22\t10M\t*\t0\t10\tTTCTTCTTTT\tABCDEFGHIJ\tNM:i:tag0\tMD:Z:t
         output_paired=False,
     )
 
+    # test the cli
+    clargs = [
+        '-i', str(sam1), "30", "r", 's',
+        '-i', str(sam2), "70", "r", 's',
+        "-n", "20",
+        "-o", str(tmp_path/"out_cli_test.bam"),
+        "--se",
+        "--seed", str(seed),
+    ]
+    cli(clargs)
 
-@argsclass(
-    description="""\
-Write a BAM that is a synthetic mixture of input BAM files according to specified proportions.
-"""
-)
-class SyntheticMixtureArgs:
-    input_files: list[str] = field(metadata=dict(
-        required=True,
 
-        help="Input BAM files with proportions and replacement flags, in the format: "
-             "-i input1.bam,0.3,T,F -i input2.bam,0.7,F,T ... Proportions are normalised to "
-             "sum to 1. 'T'/'F' indicate whether sampling is with replacement and whether the BAM is paired-end.",
-        nargs='+',
-        aliases=['-i'],
-    ))
-    total_reads: int = field(metadata=dict(
+def cli(clargs=None):
+
+
+    parser = argparse.ArgumentParser()
+
+    # positional arguments
+    parser.add_argument(
+        "--inputs", '-i',
+        nargs=4,
+        metavar=("PATH", "PROPORTION", "WITH_REPLACEMENT", "PAIRED"),
+        help=(
+            "Input specification: PATH (input BAM), PROPORTION (float), "
+            "WITH_REPLACEMENT (R|N), PAIRED (P|S)"
+        ),
+        action="append",
+
+    )
+
+    # named arguments
+    parser.add_argument(
+        "-n",
+        "--total-reads",
+        type=int,
         required=True,
         help="Total number of reads in the output BAM file.",
-        aliases=['-n'],
-    ))
-    out: Path = field(metadata=dict(
+    )
+
+    parser.add_argument(
+        "-o",
+        "--out",
+        type=Path,
         required=True,
         help="Output BAM file path.",
-        aliases=['-o'],
-    ))
-    pe: bool = field(metadata=dict(
+    )
 
-        help="Set if the *output* BAM should be paired-end. Either --pe or --se must be set. "
-             "Single-ended inputs will be duplicated to make pairs if --pe is set. "
-             "If --se is set, paired-ended inputs will have the first read written only.",
-        aliases=['--paired', '--pe'],
-    ), default=False,)
-    se: bool = field(metadata=dict(
+    parser.add_argument(
+        "--pe",
+        "--paired",
+        dest="pe",
+        action="store_true",
+        help=(
+            "Set if the *output* BAM should be paired-end. Either --pe or --se must be set. "
+            "Single-ended inputs will be duplicated to make pairs if --pe is set. "
+            "If --se is set, paired-ended inputs will have the first read written only."
+        ),
+    )
+
+    parser.add_argument(
+        "--se",
+        "--single",
+        dest="se",
+        action="store_true",
         help="Set if the *output* BAM should be single-end.",
-        aliases=['--single', '--se'],
-    ), default=False,)
-    seed: int = field(metadata=dict(
-        help="Random seed for reproducibility.",
-    ), default=None,)
+    )
 
-def cli(args: SyntheticMixtureArgs):
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Random seed for reproducibility.",
+    )
+
+    args = parser.parse_args(clargs)
 
     if args.pe == args.se:
         raise ValueError("Either --pe or --single must be set, but not both.")
 
     # split out the inputs
     inputs = []
-    for input_str in args.input_files:
-        parts = input_str.split(',')
-        if len(parts) != 4:
-            raise ValueError(
-                f"Input specification '{input_str}' is invalid. "
-                f"Expected format: input.bam,proportion,replacement,paired"
-            )
+    for parts in args.inputs:
         input_bam = parts[0]
         proportion = float(parts[1])
-        replacement = parts[2].strip().upper().startswith('T')
-        paired = parts[3].strip().upper() == 'T'
+
+        replacement = parts[2].upper()
+        if not replacement.startswith(('R', 'N')):
+            raise ValueError(f"WITH_REPLACEMENT must be 'R' for Replacement or 'N' for Not. Input was '{input_str}'.")
+        replacement = replacement.startswith('R')
+
+        paired = parts[3].upper()
+        if not paired.startswith(('P', 'S')):
+            raise ValueError(f"PAIRED must be 'P' for Paired-end or 'S' for Single-end. Input was '{input_str}'.")
+        paired = paired.startswith('P')
+
+
         inputs.append((input_bam, proportion, replacement, paired))
 
     create_synthetic_bam(
@@ -366,6 +402,6 @@ def cli(args: SyntheticMixtureArgs):
         output_paired=args.pe,
     )
 
+
 if __name__ == "__main__":
-    clargs = parse(SyntheticMixtureArgs)
-    cli(clargs)
+    cli()
