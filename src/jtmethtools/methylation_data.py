@@ -124,7 +124,7 @@ class MethylationDataset:
 
 
 
-def load_methylation_data(datdir):
+def load_methylation_data(datdir) -> MethylationDataset:
     datdir = Path(datdir)
     try:
         locdat = pd.read_parquet(datdir / 'locus_data.parquet')
@@ -135,7 +135,7 @@ def load_methylation_data(datdir):
     with open(datdir / 'metadata.json') as f:
         metadat = json.load(f)
 
-    return locdat, readdat, metadat
+    return MethylationDataset(locdat, readdat, metadat)
 
 
 def process_bam_methylation_data(
@@ -498,8 +498,8 @@ def synthetic_sample(
 
     return synthetic_data
 
-def ttest_sample_reads():
-    logger.add(sys.stdout, level='INFO')
+
+def _generate_test_dataset() -> tuple[Path, Path, MethylationDataset, MethylationDataset]:
     rdat = {'AlignmentIndex': {8: 8, 12: 12, 13: 13, 1866: 1866, 1867: 1867},
             'Start': {8: 15995, 12: 16015, 13: 16019, 1866: 605302, 1867: 605305},
             'End': {8: 16145, 12: 16164, 13: 16168, 1866: 605450, 1867: 605455},
@@ -597,13 +597,21 @@ def ttest_sample_reads():
         metadata=metadata,
     )
 
-    od1 = Path.home()/'tmp/test_mdat1_hroqwei'
-    od2 = Path.home()/'tmp/test_mdat2_fhboqwei'
+    od1 = Path.home() / 'tmp/test_mdat1_hroqwei'
+    od2 = Path.home() / 'tmp/test_mdat2_fhboqwei'
     od1.mkdir(exist_ok=True)
     od2.mkdir(exist_ok=True)
 
     test_data1.write_to_dir(od1)
     test_data2.write_to_dir(od2)
+
+    return od1, od2, test_data1, test_data2
+
+def ttest_sample_reads():
+    logger.add(sys.stdout, level='INFO')
+
+    # create small test datasets, func returns paths.
+    od1, od2, test_data1, test_data2 = _generate_test_dataset()
 
     d = synthetic_sample(
         [
@@ -621,50 +629,134 @@ def ttest_sample_reads():
     assert abs(ratio - 0.8) < 0.001
     assert abs(d.read_data.shape[0] - 5000) < 5
 
-
-
     logger.info("ttest_sample_reads passed.")
 
 
-def cli_synthetic_sample():
-    import argparse
+def write_coverage(locus_data:pd.DataFrame, outfile:str|Path) -> None:
+    """Write a coverage file from locus data."""
+    outfile = Path(outfile)
+    if not locus_data.IsCpG.all():
+        locus_data = locus_data.loc[locus_data.IsCpG]
 
+    if "Chrm" not in locus_data.columns:
+        locus_data = locus_data.reset_index()
+
+    ld = locus_data.head(10000)
+
+    g = ld.groupby(['Chrm', 'Position'])
+    m = g.MetCpG.sum()
+    n = g.MetCpG.count()
+
+    cov = m.reset_index()
+    cov.loc[:, 'Unmet'] = (n - m).values
+    cov.insert(2, 'Perc', (m / n).apply(lambda x: int(round(x * 100))).values)
+    cov.insert(1, 'Pos2', cov.Position)
+
+    # create dir
+    outfile.parent.mkdir(parents=True, exist_ok=True)
+
+    cov.to_csv(
+        outfile,
+        sep='\t', header=None, index=False,
+    )
+
+
+def cli_synthetic_sample(clargs=None):
+    import argparse
     parser = argparse.ArgumentParser(
-        description="Create a synthetic methylation dataset by combining multiple datasets."
+        description="Create a synthetic methylation dataset by combining multiple datasets. "
+                    "Example "
     )
+
     parser.add_argument(
-        '--inputs', '-i',
+        "--inputs", "-i",
         nargs=3,
-        action='append',
-        metavar=('DATA_DIR', 'PROPORTION', 'WITH_REPLACEMENT'),
+        action="append",
+        metavar=("PATH", "PROPORTION", "WITH_REPLACEMENT"),
         required=True,
-        help="Input dataset directory, proportion (float), and whether to sample with replacement ('y'/'n'). "
-             "Can be specified multiple times for multiple input datasets."
+        help=(
+            "Input dataset directory, proportion (float), whether to sample with "
+            "replacement ('R'/'N')."
+        ),
     )
+
     parser.add_argument(
-        '--total-reads', '-n',
+        "--total-reads", "-n",
         type=int,
         required=True,
-        help="Target number of reads in the synthetic dataset. May be slightly different due to rounding."
-    )
-    parser.add_argument(
-        '--output-dir', '-o',
-        type=str,
-        required=True,
-        help="Output directory for the synthetic dataset."
+        help="Target number of reads in the synthetic dataset. May differ slightly due to rounding.",
     )
 
-    args = parser.parse_args()
+    parser.add_argument(
+        "--output-dir", "-o",
+        type=Path,
+        required=True,
+        help="Output directory for the synthetic dataset.",
+    )
+
+    parser.add_argument(
+        "--coverage-out", "-c",
+        type=Path,
+        default=None,
+        help=(
+            "Optional output file for coverage data (Bismark BED format). "
+            "Using *.cov.gz extension is recommended."
+        ),
+    )
+
+    if clargs is None:
+        args = parser.parse_args()
+    else:
+        args = parser.parse_args(clargs)
 
     inputs = []
-    for datdir, prop, wrep in args.inputs:
-        inputs.append((datdir, float(prop), wrep.lower()[0] in ('t', 'y', '1')))
+    for datdir, prop, replacement in args.inputs:
+        proportion = float(prop)
+        replacement = replacement.upper()
+        if not replacement.startswith(('R', 'N')):
+            raise ValueError("WITH_REPLACEMENT must be 'R' for Replacement or 'N' for Not.")
+
+        with_replacement = True if replacement.startswith('R') else False
+
+        inputs.append((datdir, proportion, with_replacement))
+
 
     synthetic_data = synthetic_sample(
         inputs=inputs,
-        target_reads=args.target_reads
+        target_reads=args.total_reads
     )
+
+    if args.coverage_out is not None:
+        logger.info(f"Writing coverage data to {args.coverage_out}")
+        write_coverage(synthetic_data.locus_data, args.coverage_out)
 
     logger.info(f"Writing synthetic dataset to {args.output_dir}")
 
     synthetic_data.write_to_dir(args.output_dir)
+
+def ttest_cli_synthetic_sample():
+    logger.add(sys.stdout, level='INFO')
+
+    od1, od2, test_data1, test_data2 = _generate_test_dataset()
+
+    outdir = Path.home()/'tmp/synthetic_mdat_fhboqwei2'
+
+    # run the CLI function
+    cli_synthetic_sample([
+        '-i', str(od1), '0.7', 'R',
+        '-i', str(od2), '0.3', 'R',
+        '-n', '5000',
+        '-o', str(outdir),
+        '-c', str(outdir/'coverage.cov.gz'),
+    ])
+
+    # check the output
+    data = MethylationDataset.from_dir(outdir)
+    ratio = data.read_data.Start.isin(
+        MethylationDataset.from_dir(od1).read_data.Start.values).sum() / data.read_data.shape[0]
+    assert abs(ratio - 0.7) < 0.001
+    assert abs(data.read_data.shape[0] - 5000) < 5
+
+
+    logger.info("test_cli_synthetic_sample passed.")
+
