@@ -5,7 +5,7 @@ from jtmethtools.alignments import get_bismark_met_str
 from datargs import argsclass, arg, parse
 from dataclasses import field
 from pathlib import Path
-from pysam import AlignmentFile
+
 
 
 def remove_ch_methylation(bam_file: Path|str, output_file: Path|str, versbose=True):
