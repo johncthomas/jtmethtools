@@ -80,7 +80,7 @@ def bam_to_parquet(args:ArgsMethylationData):
 
     from jtmethtools.methylation_data import (
         process_bam_methylation_data,
-        write_methylation_dataset,
+        MethylationDataset,
         logger,
     )
 
@@ -115,14 +115,11 @@ def bam_to_parquet(args:ArgsMethylationData):
     )
     logger.info(f'Writing to {args.outdir}')
 
-
-
-    write_methylation_dataset(
-        args.outdir,
+    MethylationDataset(
         data.locus_data,
         data.read_data,
         data.metadata
-    )
+    ).write_to_dir(args.outdir)
 
 
 def main():
