@@ -5,3 +5,4 @@ venv/
 uv.lock
 .*
 .*/
+/build/
