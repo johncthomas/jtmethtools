@@ -109,7 +109,7 @@ class MethylationDataset:
         self.locus_data.to_parquet(outdir/'locus_data.parquet')
         self.read_data.to_parquet(outdir/'read_data.parquet')
         with open(outdir/'metadata.json', 'w') as f:
-            json.dump(self.metadata, f, indent=4)
+            json.dump(self.processes, f, indent=4)
 
     # getitem to allow tuple unpacking, e.g. locus, read, meta = dataset
     def __getitem__(self, index):

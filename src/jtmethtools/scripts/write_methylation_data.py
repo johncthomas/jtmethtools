@@ -118,7 +118,7 @@ def bam_to_parquet(args:ArgsMethylationData):
     MethylationDataset(
         data.locus_data,
         data.read_data,
-        data.metadata
+        data.processes
     ).write_to_dir(args.outdir)
 
 
