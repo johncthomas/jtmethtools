@@ -456,6 +456,10 @@ class Alignment:
             return False
         return True
 
+    def has_methylated_ch(self) -> bool:
+        """Return True if there is any methylated non-CpG in the alignment."""
+        return not self.no_non_cpg()
+
     def get_hit_regions(self, regions: Regions) -> list[str]:
         regions = [alignment_overlaps_region(a, regions)
                    for a in self.alignments]
