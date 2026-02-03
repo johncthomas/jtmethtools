@@ -1,3 +1,4 @@
+import dataclasses
 from typing import Collection, Tuple, Literal, Iterable
 
 import pandas as pd
@@ -199,7 +200,6 @@ def count_alignment_error(max_errors:int|None=1000):
             "Stopping processing on the assumption something is wrong and to avoid "
             "a 100+ GB error log."
         )
-
 
 
 @define
@@ -420,15 +420,8 @@ class Alignment:
         else:
             return max(self.a.reference_end, self.a2.reference_end)
 
-    def mapping_quality(self, keep_lowest=True):
-        if self.a2 is None:
-            return self.a.mapping_quality
-        else:
-            if keep_lowest:
-                minmax = min
-            else:
-                minmax = max
-            return minmax(self.a.mapping_quality, self.a2.mapping_quality)
+    def mapping_quality(self):
+        return self.a.mapping_quality
 
     # def _iter_locus_metstr_bismark(self, a: AlignedSegment) -> Tuple[int, bool]:
     #     """Iterate through the bismark methylation string, yielding
