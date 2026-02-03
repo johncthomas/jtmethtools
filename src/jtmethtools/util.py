@@ -115,6 +115,20 @@ def load_region_bed(fn) -> pd.DataFrame:
     return regions
 
 
+read_region_bed = load_region_bed
+
+def read_cov(fn: str|Path) -> pd.DataFrame:
+    """Read a Bismark coverage file into a DataFrame."""
+    df = pd.read_csv(
+        fn, sep='\t', header=None,
+        dtype={0: str, 1:int, 2:int, 3:float, 4:int, 5:int}
+    )
+
+    df.columns = ['Chrm', 'Locus', 'PointlessColumn', 'Percent', 'Methylated', 'Unmethylated', ]
+    df.drop("PointlessColumn", inplace=True, axis=1)
+    return df
+
+
 def write_array(
         array: NDArray,
         outfile: str|Path|typing.IO,
