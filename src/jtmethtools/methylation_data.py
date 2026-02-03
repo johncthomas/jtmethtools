@@ -1,6 +1,6 @@
 import collections
 import json
-import pathlib
+
 import sys
 from os import PathLike
 import os
@@ -83,12 +83,12 @@ class MethylationDataset:
             self,
             locus_data:pd.DataFrame,
             read_data:pd.DataFrame,
-            metadata:dict,
+            processes:list[dict]=None,
             name:str=None,
     ):
         self.locus_data = locus_data
         self.read_data = read_data
-        self.metadata = metadata
+        self.processes = [p for p in (processes or []) if p is not None]
         self.name = name
 
     @classmethod
@@ -98,7 +98,7 @@ class MethylationDataset:
         return cls(
             locus_data=locdat,
             read_data=readdat,
-            metadata=metadat,
+            processes=metadat,
             name=datdir.name,
         )
 
@@ -345,8 +345,15 @@ def process_bam_methylation_data(
     logger.info('Finished processing alignments.')
     log_memory_footprint()
 
+    process = {
+        'name': 'process_bam_methylation_data',
+        'bam_file': str(bamfn),
+         'regions_file': str(regions) if regions is not None else None,
+         'date_time': str(pd.Timestamp.now()),
+    }
     return MethylationDataset(
-        locus_data=locus_table, read_data=read_table
+        locus_data=locus_table, read_data=read_table,
+        processes=[process]
     )
 
 
@@ -426,7 +433,7 @@ def sample_reads(
     methylation_data = MethylationDataset(
         locus_data=resamp_locus_table,
         read_data=resamp_read_table,
-        metadata=metadata
+        processes=metadata
     )
 
     return methylation_data
@@ -491,7 +498,7 @@ def synthetic_sample(
     synthetic_data = MethylationDataset(
         locus_data=combined_locus_table,
         read_data=combined_read_table,
-        metadata=metadata
+        processes=metadata
     )
 
     logger.info(f'Finished creating synthetic sample. Actual total reads: {total_reads}')
@@ -546,7 +553,7 @@ def _generate_test_dataset() -> tuple[Path, Path, MethylationDataset, Methylatio
     test_data1 = MethylationDataset(
         locus_data=test_locus_table,
         read_data=test_read_table,
-        metadata=metadata
+        processes=metadata
     )
 
     rdat2, ldat2 = (
@@ -594,7 +601,7 @@ def _generate_test_dataset() -> tuple[Path, Path, MethylationDataset, Methylatio
     test_data2 = MethylationDataset(
         locus_data=pd.DataFrame.from_dict(ldat2),
         read_data=pd.DataFrame.from_dict(rdat2),
-        metadata=metadata,
+        processes=metadata,
     )
 
     od1 = Path.home() / 'tmp/test_mdat1_hroqwei'
