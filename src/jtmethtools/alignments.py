@@ -370,7 +370,12 @@ class Alignment:
                 nucleotides[l] = nt
                 methylations[l] = met
 
-        return LocusValues(qualities=phreds, nucleotides=nucleotides, methylations=methylations)
+        sorted_phreds, sorted_nucleotides, sorted_methylations = (
+            dict(sorted(d.items()))
+            for d in (phreds, nucleotides, methylations)
+        )
+
+        return LocusValues(qualities=sorted_phreds, nucleotides=sorted_nucleotides, methylations=sorted_methylations)
 
     # def merge(self) -> Self:
     #     if self.a2 is None:
