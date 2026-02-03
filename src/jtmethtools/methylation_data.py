@@ -118,7 +118,7 @@ class MethylationDataset:
         elif index == 1:
             return self.read_data
         elif index == 2:
-            return self.metadata
+            return self.processes
         else:
             raise IndexError("MethylationDataset only has three items: locus_data, read_data, metadata.")
 
@@ -352,7 +352,7 @@ def process_bam_methylation_data(
          'date_time': str(pd.Timestamp.now()),
     }
     return MethylationDataset(
-        locus_data=locus_table, read_data=read_table,
+        locus_data=table2df(locus_table), read_data=table2df(read_table),
         processes=[process]
     )
 
