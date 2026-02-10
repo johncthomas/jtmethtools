@@ -76,12 +76,18 @@ class Regions:
         return set(self.starts.keys())
 
     @classmethod
-    def from_file(cls, filename: Pathy) -> Self:
+    def from_file(cls,  filename: Pathy, sep='\t',) -> Self:
+        """Expects either a BED file or a TSV with the columns Chrm, Start, End, Name.
+
+        Set `sep` to specify a separator for the TSV.
+
+        If it's a BED file that doesn't end with .bed or .bed.gz, use Regions.from_bed."""
         filename = str(filename)
-        if filename.endswith('.bed') or filename.endswith('.txt'):
+        if filename.endswith('.bed') or filename.endswith('.bed.gz'):
             return cls.from_bed(filename)
-        df = pd.read_csv(filename, sep='\t', dtype={'Chrm':str})
-        return (cls.from_df(df))
+
+        df = pd.read_csv(filename, sep=sep, dtype={'Chrm':str})
+        return cls.from_df(df)
 
 
     @classmethod
