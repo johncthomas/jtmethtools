@@ -126,6 +126,10 @@ class CpGIndex:
         cpg_list: a tuple of (chrm, locus) tuples
         locus2index: maps (chrm, locus) -> cpg_index
         region_names: optional tuple of region names for each CpG site
+
+    Note: Uses MappingProxyType for locus2index to make it immutable. If you wish to
+    modify, make changes to cpg_list and then create a new instance using
+    CpGIndex.from_cpg_list.
     """
     cpg_list: tuple[tuple[str, int], ...]
     locus2index: MappingProxyType[tuple[str, int], int]
