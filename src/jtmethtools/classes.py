@@ -11,6 +11,7 @@ from jtmethtools.util import (
     load_region_bed, split_table_by_chrm,
     fasta_to_dict, CANNONICAL_CHRM
 )
+import pickle
 from numpy import typing as npt
 from numpy.typing import NDArray
 import re
@@ -169,7 +170,6 @@ class CpGIndex:
         cpg_regions:list[str] = []
         for chrm, loc in self.cpg_list:
 
-
             hit = regions.region_at_locus(chrm, loc)
             if hit:
                 cpg_regions.append(hit)
@@ -181,6 +181,23 @@ class CpGIndex:
         # as it's frozen, we can use the id of the object as a hash.
         return id(self)
 
+    def to_file(self, fn: str | Path) -> None:
+        """Write the CpG index to a file (pickle)."""
+        with open(fn, 'wb') as f:
+            dat = {'cpg_list': self.cpg_list,
+                   'locus2index': dict(self.locus2index),
+                   'region_names': self.region_names}
+            pickle.dump(dat, f)
+
+    @classmethod
+    def from_file(cls, fn: str | Path) -> Self:
+        """Load a CpG index from a file (pickle)."""
+        with open(fn, 'rb') as f:
+            dat = pickle.load(f)
+            dat['locus2index'] = MappingProxyType(dat['locus2index'])
+            return cls(
+                **dat,
+            )
 
 @define(frozen=True)
 class Genome:
