@@ -38,8 +38,13 @@ class ArgsMethylationData:
         aliases=['-b']
     ))
     outdir: Path =  field(metadata=dict(
-        help='Directory to which the tables will be written.',
+        help='Directory to which the output dir will be written - so actual outdir is $outdir/$sample, '
+             'where $sample comes from the input bam filename, or --sample_name.',
         aliases=['-o']
+    ))
+    sample_name: str = field(default=None, metadata=dict(
+        help='Sample name that will be used in output directory name. Default uses stem of input bamfn.',
+        aliases=['-s']
     ))
     regions: Path = field(metadata=dict(
         help='Alignments that overlap with regions will be written to the table. '
@@ -92,8 +97,16 @@ def bam_to_parquet(args:ArgsMethylationData):
         raise ValueError("Specify single-ended or paired-eneded with --se or --pe.")
 
     dt = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+    # Deal with output directory and sample name
+    sample_name = args.sample_name if args.sample_name is not None else args.bam.stem
+    outdir = args.outdir/sample_name
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    logger.info(f'Processing {args.bam}, will be written to {outdir}')
+
     # make log dir
-    logdir = args.outdir/'log'
+    logdir = outdir/'log'
     if not logdir.exists():
         logdir.mkdir(parents=True, exist_ok=True)
     logger.add(logdir/f"{dt}.log", level='INFO')
@@ -118,13 +131,12 @@ def bam_to_parquet(args:ArgsMethylationData):
         min_mapq=args.min_mapq,
         drop_methylated_ch_reads=args.drop_mCpH_reads
     )
-    logger.info(f'Writing to {args.outdir}')
 
     MethylationDataset(
         data.locus_data,
         data.read_data,
         data.processes
-    ).write_to_dir(args.outdir)
+    ).write_to_dir(outdir)
 
 
 def main():
