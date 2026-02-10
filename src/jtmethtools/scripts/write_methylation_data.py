@@ -42,35 +42,38 @@ class ArgsMethylationData:
         aliases=['-o']
     ))
     regions: Path = field(metadata=dict(
-        default=None,
         help='Alignments that overlap with regions will be written to the table. '
              'If not provided (default), all alignments will be written.',
         aliases=['-r']
     ))
     # either --se or --pe for sing/paired end
     se: bool = field(metadata=dict(
-        default=False,
         help='Set if the BAM file contains single-end reads. Either --se or --pe must be set.',
         aliases=['--se', '--single-end']
     ))
     pe: bool = field(metadata=dict(
-        default=False,
         help='Set if the BAM file contains paired-end reads. Either --se or --pe must be set.',
         aliases=['--pe', '--paired-end']
     ))
     all_chrm: bool = field(metadata=dict(
-        default=False,
         help='By default, only include reads from cannonical chromosomes. '
              'Set this to include all chromosomes (i.e. all unplaced scaffold and alts).',
         aliases=['-a']
     ))
     unmethylated_ch: bool = field(metadata=dict(
-        default=False,
         help='Set to include unmethylated CH in output. By default, '
              'only methylated CH are included.',
         aliases = ['-c', '--ch']
     ))
-    quiet: bool = field(default=False, metadata=dict(
+    drop_mCpH_reads: bool = field(metadata=dict(
+        help='Set to drop reads with any methylated CpH. By default, these are included.',
+        aliases=['-d']
+    ))
+    min_mapq: int = field(metadata=dict(
+        help='Minimum mapping quality to include read. Default is 20.',
+        aliases=['-m']
+    ), default=20)
+    quiet: bool = field(metadata=dict(
         help='Set to silence info messages printed to STDOUT. Log file created either way.',
     ))
 
@@ -112,6 +115,8 @@ def bam_to_parquet(args:ArgsMethylationData):
         cannonical_chrm_only=not args.all_chrm,
         include_unmethylated_ch=args.unmethylated_ch,
         chunk_size=int(1e6),
+        min_mapq=args.min_mapq,
+        drop_methylated_ch_reads=args.drop_mCpH_reads
     )
     logger.info(f'Writing to {args.outdir}')
 

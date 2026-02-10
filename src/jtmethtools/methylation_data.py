@@ -1,4 +1,5 @@
 import collections
+import copy
 import json
 
 import sys
@@ -23,6 +24,7 @@ import pandas as pd
 from jtmethtools.alignments import (
     Alignment,
     iter_bam,
+    get_bismark_met_str
 )
 
 from jtmethtools.classes import *
@@ -94,11 +96,11 @@ class MethylationDataset:
     @classmethod
     def from_dir(cls, datdir:Path|str) -> Self:
         datdir = Path(datdir)
-        locdat, readdat, metadat = load_methylation_data(datdir)
+        locdat, readdat, processes = load_methylation_data(datdir)
         return cls(
             locus_data=locdat,
             read_data=readdat,
-            processes=metadat,
+            processes=processes,
             name=datdir.name,
         )
 
@@ -110,6 +112,28 @@ class MethylationDataset:
         self.read_data.to_parquet(outdir/'read_data.parquet')
         with open(outdir/'metadata.json', 'w') as f:
             json.dump(self.processes, f, indent=4)
+
+    def drop_methylated_CH(self) -> Self:
+        """Return a new MethylationDataset with reads that have methylated CpH
+        removed from locus_data and read_data."""
+
+        m = self.locus_data.BismarkCode.isin(['X', 'H', 'U'])
+        bad_aln = self.locus_data.loc[m, 'AlignmentIndex'].unique()
+        locdat = self.locus_data.loc[~self.locus_data.AlignmentIndex.isin(bad_aln)].reset_index(drop=True)
+        readat = self.read_data.loc[~self.read_data.AlignmentIndex.isin(bad_aln)].reset_index(drop=True)
+        procs = copy.copy(self.processes)
+        procs.append({
+            'name': 'drop_methylated_CH',
+            'date_time': str(pd.Timestamp.now()),
+            'n_dropped_reads': len(bad_aln),
+            'reads_remaining': readat.shape[0],
+        })
+
+        return MethylationDataset(
+            locus_data=locdat,
+            read_data=readat,
+            processes=procs,
+        )
 
     # getitem to allow tuple unpacking, e.g. locus, read, meta = dataset
     def __getitem__(self, index):
@@ -147,6 +171,9 @@ def process_bam_methylation_data(
         cannonical_chrm_only=True,
         include_unmethylated_ch=False,
         chunk_size=int(1e6),
+        min_mapq=0,
+        #min_phred=0, # this one's easier at the table level
+        drop_methylated_ch_reads=False,
 ) -> MethylationDataset:
 
     logger.info(f"Processing BAM, {bamfn}, {first_i}-{last_i}.")
@@ -270,46 +297,31 @@ def process_bam_methylation_data(
         if aln_i >= last_i:
             break
 
+        aln_i += 1 # AlignmentIndex 0 is for empty rows.
+
         aln:Alignment
 
         if not include_alignment(aln):
             continue
 
+        if aln.mapping_quality() < min_mapq:
+            continue
+        if aln.a.is_unmapped:
+            continue
         metstr = aln.metstr
         if not metstr:
             # malformed bismark data can result in empty metstr
             #   for otherwise valid alignments
             continue
+        if drop_methylated_ch_reads and ('H' in metstr or 'X' in metstr or 'U' in metstr):
+            continue
 
-        # record the read data
-        read_data['AlignmentIndex'][read_cursor] = aln_i
-        read_data['Start'][read_cursor] = aln.reference_start
-        read_data['End'][read_cursor] = aln.reference_end
-        read_data['MappingQuality'][read_cursor] = aln.mapping_quality()
-        read_data['Chrm'][read_cursor] = chrm_map[aln.reference_name]
-        read_cursor += 1
-
-        len_vals = len(metstr) if include_unmethylated_ch else len(metstr.replace('.', ''))
-
-        if (locus_cursor+len_vals) >= chunk_size:
-            if len_vals > chunk_size:
-                raise ValueError("Chunk size exceeded by a single alignment.")
-
-            loc_table = get_locus_table_from_chunk(current_locus_data, locus_cursor)
-            locus_data_tables.append(loc_table)
-
-            # reset the current locus data
-            current_locus_data = get_empty_locus_chunk()
-            locus_cursor = 0
-
-            # # memory check
-            # logger.info(f'After saving locus data chunk at read {read_cursor+1}:')
-            # log_memory_footprint()
-
+        data_added = False
         for pos, met in aln.locus_methylation.items():
             if met == '.':
                 continue
             if include_unmethylated_ch or met.isupper() or (met.lower() == 'z'):
+                data_added = True
                 # record the locus data
                 current_locus_data['AlignmentIndex'][locus_cursor] = aln_i
                 current_locus_data['ReadNucleotide'][locus_cursor] = nt_map[aln.locus_nucleotide[pos]]
@@ -322,8 +334,22 @@ def process_bam_methylation_data(
 
                 locus_cursor += 1
 
-        if read_cursor >= max_reads:
-            logger.info(f'Reached max reads, stopping processing. {bamfn=}, {max_reads=}.')
+                if locus_cursor >= chunk_size:
+                    loc_table = get_locus_table_from_chunk(current_locus_data, locus_cursor)
+                    locus_data_tables.append(loc_table)
+                    current_locus_data = get_empty_locus_chunk()
+                    locus_cursor = 0
+        if data_added:
+            # record the read data
+            read_data['AlignmentIndex'][read_cursor] = aln_i
+            read_data['Start'][read_cursor] = aln.reference_start
+            read_data['End'][read_cursor] = aln.reference_end
+            read_data['MappingQuality'][read_cursor] = aln.mapping_quality()
+            read_data['Chrm'][read_cursor] = chrm_map[aln.reference_name]
+            read_cursor += 1
+
+            if read_cursor >= max_reads:
+                logger.info(f'Reached max reads, stopping processing. {bamfn=}, {max_reads=}.')
 
     # save the last locus data chunk
     loc_table = get_locus_table_from_chunk(current_locus_data, locus_cursor)
@@ -351,9 +377,18 @@ def process_bam_methylation_data(
          'regions_file': str(regions) if regions is not None else None,
          'date_time': str(pd.Timestamp.now()),
     }
+    locus_data = table2df(locus_table)
+    read_data = table2df(read_table)
+    processes = [process]
+
+    locus_data = locus_data.loc[locus_data.AlignmentIndex != 0].reset_index(drop=True)
+    read_data = read_data.loc[read_data.AlignmentIndex != 0].reset_index(drop=True)
+
+    locus_data.loc[:, 'MetCpG'] = locus_data.BismarkCode == 'Z'
+
     return MethylationDataset(
-        locus_data=table2df(locus_table), read_data=table2df(read_table),
-        processes=[process]
+        locus_data=locus_data, read_data=read_data,
+        processes=processes
     )
 
 
@@ -767,3 +802,106 @@ def ttest_cli_synthetic_sample():
 
     logger.info("test_cli_synthetic_sample passed.")
 
+
+def ttest_process_bam():
+    # alignment index, from the order of this table, is used in tests, so be careful if removing
+    #   rows etc.
+    # Remember: AlignmentIndex is 1-based.
+    samstr = """@HD	VN:1.0	SO:none
+@SQ	SN:1	LN:248956422
+mapq20Unorder	18	1	100	20	10M	*	0	10	TTTTTTTTTT	JJJJJJJJJJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:hhhhhhhhhh
+unmethRev	18	1	100	42	10M	*	0	10	TTTTTTTTTT	JJJJJJJJJJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:hhhhhhhhhh
+methRev	18	1	101	32	10M	*	0	10	CCCCCCCCCC	JJJJJJJJJJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:HHHHHHHHHH
+unmethFor	2	1	102	27	10M	*	0	10	TTTTTTTTTT	ABCDEFGHIJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:zzzzzzzzzz
+methFor	2	1	103	22	10M	*	0	10	CCCCCCCCCC	ABCDEFGHIJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:ZZZZZZZZZZ
+allA	2	1	104	17	10M	*	0	10	AAAAAAAAAA	ABCDEFGHIJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:..........
+allC	2	1	105	12	10M	*	0	10	CCCCCCCCCC	ABCDEFGHIJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:..........
+allG	2	1	106	12	10M	*	0	10	GGGGGGGGGG	ABCDEFGHIJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:..........
+allT	2	1	107	12	10M	*	0	10	TTTTTTTTTT	ABCDEFGHIJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:..........
+oneCpG	2	1	107	12	10M	*	0	10	TTCGTTTTTT	ABCDEFGHIJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:..z.......
+twoCpG	2	1	107	12	10M	*	0	10	TTCGCGTTTT	ABCDEFGHIJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:..z.z.....
+mapq19	18	1	100	19	10M	*	0	10	TTTTTTTTTT	JJJJJJJJJJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:hhhhhhhhhh
+mapq20	18	1	100	20	10M	*	0	10	TTTTTTTTTT	JJJJJJJJJJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:hhhhhhhhhh
+oneCHH\t2\t1\t104\t22\t10M\t*\t0\t10\tTTCTTTTTTT\tABCDEFGHIJ\tNM:i:tag0\tMD:Z:tag1\tXM:Z:..H.......
+twoCHH\t2\t1\t104\t22\t10M\t*\t0\t10\tTTCTTCTTTT\tABCDEFGHIJ\tNM:i:tag0\tMD:Z:tag1\tXM:Z:..H..H....
+twoCHH1z\t2\t1\t104\t22\t10M\t*\t0\t10\tTTCTTCTTTC\tABCDEFGHIJ\tNM:i:tag0\tMD:Z:tag1\tXM:Z:..H..H...z
+"""
+
+    samfn = Path.home() / 'tmp/test_mdat_sam_vcoqhiwb.sam'
+
+    with open(samfn, 'w') as f:
+        f.write(samstr)
+
+    data1 = process_bam_methylation_data(
+        bamfn=samfn,
+        include_unmethylated_ch=True,
+        paired_end=False,
+    )
+
+    # print('include_unmethylated_ch=True')
+    # print(data1.read_data)
+    # print(data1.locus_data.AlignmentIndex.value_counts().sort_index())
+
+    # no reads that have a C should be removed.
+    n_aln = 0
+    with open(samfn, 'r') as f:
+        for aln in pysam.AlignmentFile(f):
+            if set(get_bismark_met_str(aln)) != {'.'}:
+                n_aln += 1
+    ld1 = data1.locus_data
+    assert data1.read_data.shape[0] == n_aln
+    assert set(data1.read_data.AlignmentIndex) == set(data1.locus_data.AlignmentIndex), (set(data1.read_data.AlignmentIndex), set(data1.locus_data.AlignmentIndex))
+    assert (ld1.loc[ld1.AlignmentIndex == 13, 'BismarkCode'] == 'h').all()
+    assert ld1.loc[ld1.AlignmentIndex == 16, 'BismarkCode'].value_counts()['H'] == 2
+    assert ld1.loc[ld1.AlignmentIndex == 16, 'BismarkCode'].value_counts()['z'] == 1
+
+    # options same as data1, except super short chunk size to test chunking logic.
+    data1b = process_bam_methylation_data(
+        bamfn=samfn,
+        include_unmethylated_ch=True,
+        paired_end=False,
+        chunk_size=3,
+    )
+    assert (data1b.locus_data == data1.locus_data).all().all()
+
+    data2 = process_bam_methylation_data(
+        bamfn=samfn,
+        include_unmethylated_ch=False,
+        drop_methylated_ch_reads=True,
+        paired_end=False,
+    )
+
+    rd2 = data2.read_data
+    ld2 = data2.locus_data
+
+    assert not (rd2.AlignmentIndex == 13).any()
+    assert not (rd2.AlignmentIndex == 16).any()
+
+    # print('include_unmethylated_ch=False, drop_methylated_ch_reads=True')
+    # print(data2.read_data)
+    # print(data2.locus_data.AlignmentIndex.value_counts().sort_index())
+
+
+    data3 = process_bam_methylation_data(
+        bamfn=samfn,
+        include_unmethylated_ch=True,
+        drop_methylated_ch_reads=True,
+        min_mapq=20,
+        paired_end=False,
+    )
+
+    # print('min_mapq=20, include_unmethylated_ch=True, drop_methylated_ch_reads=True')
+    # print(data3.read_data)
+    #print(data2.locus_data.AlignmentIndex.value_counts().sort_index())
+
+    rd3 = data3.read_data
+    ld3 = data3.locus_data
+    # just checking mapq19 is dropped, mapq20 is kept.
+    assert not (rd3.AlignmentIndex == 12).any()
+    assert (rd3.AlignmentIndex == 13).any()
+
+    print('bam processing testing complete')
+
+
+
+#ttest_process_bam()
