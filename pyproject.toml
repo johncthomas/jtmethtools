@@ -11,7 +11,7 @@ requires-python = ">=3.10"
 dependencies = [
     "loguru>=0.7.2",
     "pysam>=0.22.1",
-    "pandas>=2.0.0",
+    "pandas>=2,<3",
     "attrs",
     "pytest",
     "pyarrow==18.1",
