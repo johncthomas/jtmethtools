@@ -35,50 +35,52 @@ The output is a pair of parquet files, and some metadata:
 class ArgsMethylationData:
     bam: Path = field(metadata=dict(
         help='BAM file will be converted to tables.',
-        aliases=['-b']
+        aliases=['-b'],
+        required=True,
     ))
     outdir: Path =  field(metadata=dict(
         help='Directory to which the output dir will be written - so actual outdir is $outdir/$sample, '
              'where $sample comes from the input bam filename, or --sample_name.',
-        aliases=['-o']
+        aliases=['-o'],
+        required=True,
     ))
     sample_name: str = field(default=None, metadata=dict(
         help='Sample name that will be used in output directory name. Default uses stem of input bamfn.',
         aliases=['-s']
     ))
-    regions: Path = field(metadata=dict(
+    regions: Path = field(default=None, metadata=dict(
         help='Alignments that overlap with regions will be written to the table. '
              'If not provided (default), all alignments will be written.',
         aliases=['-r']
     ))
     # either --se or --pe for sing/paired end
-    se: bool = field(metadata=dict(
+    se: bool = field(default=False, metadata=dict(
         help='Set if the BAM file contains single-end reads. Either --se or --pe must be set.',
         aliases=['--se', '--single-end']
     ))
-    pe: bool = field(metadata=dict(
+    pe: bool = field(default=False, metadata=dict(
         help='Set if the BAM file contains paired-end reads. Either --se or --pe must be set.',
         aliases=['--pe', '--paired-end']
     ))
-    all_chrm: bool = field(metadata=dict(
+    all_chrm: bool = field(default=False, metadata=dict(
         help='By default, only include reads from cannonical chromosomes. '
              'Set this to include all chromosomes (i.e. all unplaced scaffold and alts).',
         aliases=['-a']
     ))
-    unmethylated_ch: bool = field(metadata=dict(
+    unmethylated_ch: bool = field(default=False, metadata=dict(
         help='Set to include unmethylated CH in output. By default, '
              'only methylated CH are included.',
         aliases = ['-c', '--ch']
     ))
-    drop_mCpH_reads: bool = field(metadata=dict(
+    drop_mCpH_reads: bool = field(default=False, metadata=dict(
         help='Set to drop reads with any methylated CpH. By default, these are included.',
         aliases=['-d']
     ))
-    min_mapq: int = field(metadata=dict(
+    min_mapq: int = field(default=20, metadata=dict(
         help='Minimum mapping quality to include read. Default is 20.',
         aliases=['-m']
-    ), default=20)
-    quiet: bool = field(metadata=dict(
+    ))
+    quiet: bool = field(default=False, metadata=dict(
         help='Set to silence info messages printed to STDOUT. Log file created either way.',
     ))
 
@@ -102,8 +104,6 @@ def bam_to_parquet(args:ArgsMethylationData):
     sample_name = args.sample_name if args.sample_name is not None else args.bam.stem
     outdir = args.outdir/sample_name
     outdir.mkdir(parents=True, exist_ok=True)
-
-    logger.info(f'Processing {args.bam}, will be written to {outdir}')
 
     # make log dir
     logdir = outdir/'log'
