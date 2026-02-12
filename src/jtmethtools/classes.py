@@ -99,7 +99,14 @@ class Regions:
     def from_df(cls, df: pd.DataFrame) -> Self:
         """Expects columns Start, End, Name & Chrm."""
         df.set_index('Name', inplace=True, drop=False)
+        # safely check Chrm is str
+        if not pd.api.types.is_string_dtype(df.Chrm.dtype):
+            chrms = df.Chrm.astype(str)
+            # pandas 3 might not allow changing dtypes
+            df = df.drop('Chrm', axis=1)
+            df.loc[:, 'Chrm'] = chrms
         sdf = split_table_by_chrm(df)
+
 
         return cls(
             starts={k: sdf[k].Start.values for k in sdf},
