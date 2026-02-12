@@ -56,11 +56,11 @@ class ArgsMethylationData:
     # either --se or --pe for sing/paired end
     se: bool = field(default=False, metadata=dict(
         help='Set if the BAM file contains single-end reads. Either --se or --pe must be set.',
-        aliases=['--se', '--single-end']
+        aliases=['--single-end']
     ))
     pe: bool = field(default=False, metadata=dict(
-        help='Set if the BAM file contains paired-end reads. Either --se or --pe must be set.',
-        aliases=['--pe', '--paired-end']
+        help='See --se.',
+        aliases=['--paired-end']
     ))
     all_chrm: bool = field(default=False, metadata=dict(
         help='By default, only include reads from cannonical chromosomes. '
@@ -72,7 +72,7 @@ class ArgsMethylationData:
              'only methylated CH are included.',
         aliases = ['-c', '--ch']
     ))
-    drop_mCpH_reads: bool = field(default=False, metadata=dict(
+    drop_mch_reads: bool = field(default=False, metadata=dict(
         help='Set to drop reads with any methylated CpH. By default, these are included.',
         aliases=['-d']
     ))
