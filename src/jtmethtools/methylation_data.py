@@ -93,6 +93,11 @@ class MethylationDataset:
         self.processes = [p for p in (processes or []) if p is not None]
         self.name = name
 
+    @property
+    def metadata(self) -> list[dict]:
+        logger.warning("DEPRECIATION: metadata is now a list of processes. Use the .processes property to access it.")
+        return self.processes
+
     @classmethod
     def from_dir(cls, datdir:Path|str) -> Self:
         datdir = Path(datdir)
