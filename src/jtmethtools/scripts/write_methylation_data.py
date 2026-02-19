@@ -129,7 +129,7 @@ def bam_to_parquet(args:ArgsMethylationData):
         include_unmethylated_ch=args.unmethylated_ch,
         chunk_size=int(1e6),
         min_mapq=args.min_mapq,
-        drop_methylated_ch_reads=args.drop_mCpH_reads
+        drop_methylated_ch_reads=args.drop_mch_reads
     )
 
     MethylationDataset(
