@@ -13,7 +13,7 @@ class MethylationFigure:
         self._lines = []
         self.lims = [np.inf, -np.inf, np.inf, -np.inf]
 
-    def add_methylated(self, x, y) -> None:
+    def add_unmethylated(self, x, y) -> None:
         circle = plt.Circle(
             (x, y),
             self.pearl_sz,
@@ -24,18 +24,18 @@ class MethylationFigure:
 
         self._patches.append(circle)
 
-    def add_unmethylated(self, x, y) -> None:
+    def add_methylated(self, x, y) -> None:
         circle = plt.Circle(
             (x, y),
             self.pearl_sz,
-            facecolor="#444444",
+            facecolor="#801a00",
             edgecolor='#000000',
             linewidth=1
         )
         self._patches.append(circle)
 
     def add_line(self, x, x_max, y) -> None:
-        l = self._lines.append(
+        self._lines.append(
             plt.Line2D(
                 [x, x_max],
                 [y, y],
@@ -44,7 +44,7 @@ class MethylationFigure:
                 linestyle='-'
             )
         )
-        self._lines.append(l)
+
     def _update_limits(self, x, x_max, y):
         if x < self.lims[0]:
             self.lims[0] = x
