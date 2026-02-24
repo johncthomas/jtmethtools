@@ -378,9 +378,19 @@ def process_bam_methylation_data(
 
     process = {
         'name': 'process_bam_methylation_data',
-        'bam_file': str(bamfn),
-         'regions_file': str(regions) if regions is not None else None,
-         'date_time': str(pd.Timestamp.now()),
+        'bam_file': str(Path(bamfn).resolve()), # full path
+        'regions_file': str(regions) if regions is not None else None,
+        'date_time': str(pd.Timestamp.now()),
+        'parameters': {
+            'first_i': first_i,
+            'last_i': last_i,
+            'paired_end': paired_end,
+            'cannonical_chrm_only': cannonical_chrm_only,
+            'include_unmethylated_ch': include_unmethylated_ch,
+            'chunk_size': chunk_size,
+            'min_mapq': min_mapq,
+            'drop_methylated_ch_reads': drop_methylated_ch_reads,
+        }
     }
     locus_data = table2df(locus_table)
     read_data = table2df(read_table)
