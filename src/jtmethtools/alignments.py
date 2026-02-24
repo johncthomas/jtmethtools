@@ -577,7 +577,7 @@ def iter_bam_segments(
         else:
             raise RuntimeError(
                 "Paired end BAM not sorted by queryname or coordinate. "
-                "Use sort it, or use the --single-ended option.\n"
+                "Sort it, or use the --single-ended option.\n"
             )
 
     else:
