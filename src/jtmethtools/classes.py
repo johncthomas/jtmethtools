@@ -269,8 +269,19 @@ class Genome:
 
     @cached_property
     def cpg_index(self) -> CpGIndex:
+        import warnings
+        # give depreciation warning
+        with warnings.catch_warnings():
+            warnings.simplefilter("once", DeprecationWarning)
+            warnings.warn("Accessing cpg_index as a property is deprecated. Use get_cpg_index() instead. "
+                          "(An @cached_property is incompatible with a frozen dataclass - "
+                          "it recalculates every time its accessed)", DeprecationWarning)
         idx = CpGIndex.from_genome(self)
         return idx
+
+    def get_cpg_index(self) -> CpGIndex:
+        """Get the CpG index for this genome."""
+        return CpGIndex.from_genome(self)
 
     @property
     def chromsomes(self) -> list[str]:
@@ -283,8 +294,6 @@ class Genome:
         # attrs version of the hash tries to hash .sequences,
         #   which raises an error.
         return id(self)
-
-
 
 
 
