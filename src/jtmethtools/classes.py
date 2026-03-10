@@ -133,13 +133,14 @@ class Regions:
 
 @define(frozen=True)
 class CpGIndex:
-    """Index of CpG sites in a genome. By default we use 0-indexing.
+    """Index of CpG sites in a genome.
 
     Attributes:
-        cpg_list: a tuple of (chrm, locus) tuples
+        cpg_list: a tuple of (chrm, locus) tuples.
         locus2index: maps (chrm, locus) -> cpg_index
         region_names: optional tuple of region names for each CpG site
-        one_indexed: True if the index is 1-indexed
+        one_indexed: True if locus2index is uses 1-indexing for chromosome position.
+
 
     Note: Uses MappingProxyType for locus2index to make it immutable. If you wish to
     modify, make changes to cpg_list and then create a new instance using
@@ -159,46 +160,52 @@ class CpGIndex:
     def from_cpg_list(
             cls,
             cpg_list: list[tuple[str, int]],
+            make_one_indexed: bool,
+            is_one_indexed=False,
             region_names: tuple[str, ...] = None,
-            one_indexed: bool = False
+
     ) -> Self:
-        """Create a CpGIndex from a list of (chromosome, position) tuples."""
-        offset = int(one_indexed)
+        """Create a CpGIndex from a list of (chromosome, position) tuples.
+
+        If CpG list is already one indexed, set `is_one_indexed` to True.
+        If you want to make it one indexed, set `make_one_indexed` to True, this will set
+            the one_indexed attribute to True and add 1 to all positions in the cpg_list and locus2index."""
         pos2index = {
-            (pos[0], pos[1]+offset): idx for idx, pos in enumerate(cpg_list)
+            (pos[0], pos[1]): idx for idx, pos in enumerate(cpg_list)
         }
         # create mapping for second C in CpG.
         pos2index |= {
-            (c, p+1+offset): idx for idx, (c, p) in enumerate(cpg_list)
+            (c, p+1): idx for idx, (c, p) in enumerate(cpg_list)
         }
 
         pos2index = MappingProxyType(pos2index)
         return cls(cpg_list=tuple(cpg_list), locus2index=pos2index,
-                   region_names=region_names, one_indexed=one_indexed)
+                   region_names=region_names, one_indexed=make_one_indexed or is_one_indexed)
 
     @classmethod
     def from_genome(
             cls,
             genome: 'Genome',
             region_names: tuple[str] = None,
-            one_indexed: bool = False
+            make_one_indexed: bool = False
     ) -> Self:
         """Create a CpGIndex from a Genome object."""
         cpg_list = []
+        offset = 1 if make_one_indexed else 0
         for chrm, seq in genome.sequences.items():
-            cpg_list.extend((chrm, m.start()) for m in re.finditer('(?=CG)', seq))
-        return cls.from_cpg_list(cpg_list, region_names=region_names, one_indexed=one_indexed)
+            cpg_list.extend((chrm, m.start()+offset) for m in re.finditer('(?=CG)', seq))
+        return cls.from_cpg_list(cpg_list, region_names=region_names, make_one_indexed=make_one_indexed)
 
     @classmethod
     def from_fasta(
             cls,
             fn: str | Path,
             region_names: tuple[str] = None,
-            one_indexed: bool = False
+            make_one_indexed: bool = False
     ) -> Self:
         """Create a CpGIndex from a fasta file."""
         genome = Genome.from_fasta(fn)
-        return cls.from_genome(genome, region_names=region_names, one_indexed=one_indexed)
+        return cls.from_genome(genome, region_names=region_names, make_one_indexed=make_one_indexed)
 
     def filter_cpg_index_by_regions(
             self,
