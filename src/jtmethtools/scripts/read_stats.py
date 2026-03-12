@@ -16,7 +16,7 @@ from jtmethtools.alignments import get_bismark_met_str
 from jtmethtools.util import write_array, read_array
 
 
-COLUMNS = ( 'Chrm', 'Start', 'Length', 'H', 'X', 'U', 'Z', 'h', 'x', 'u', 'z', 'FreqC', 'Met', 'NotC')
+COLUMNS = ( 'Chrm', 'Start', 'Length', 'H', 'X', 'U', 'Z', 'h', 'x', 'u', 'z', 'D', 'FreqC', 'Met', "Read")
 COLI = {c:i for i, c in enumerate(COLUMNS)}
 
 CHRM_MAP:dict[str, int] = {}
@@ -47,6 +47,7 @@ def iter_alignments(bamfn, only_cannon_chrm) -> Iterator[pysam.AlignedSegment]:
 
 def get_table_np(bamfn, only_cannonical_chrm=False) -> npt.NDArray[np.uint32]:
     """Generate table of per-read methylation stats from a Bismark BAM."""
+    # depreciated in favor of get_table, which uses arrow backed pandas DF instead of numpy array.
     i = 0
     for i, _ in enumerate(iter_alignments(bamfn, only_cannonical_chrm)):
         pass
@@ -64,11 +65,13 @@ def get_table_np(bamfn, only_cannonical_chrm=False) -> npt.NDArray[np.uint32]:
         row[COLI['Chrm']] = CHRM_MAP[a.reference_name]
         row[COLI['Start']] = a.query_alignment_start
         row[COLI['Length']] = ln
+        row[COLI['Read']] = 'R1' if a.is_read1 else 'R2'
+
 
         # count glyphs in the methylation string.
         c = dict(Counter(metstr))
         # Give '.' a better name
-        c['NotC'] = c['.']
+        c['D'] = c['.']
         del c['.']
         for k, v in c.items():
             row[COLI[k]] = v
@@ -91,9 +94,8 @@ def get_table(bamfn, only_cannonical_chrm=False) -> pd.DataFrame:
     total_alignments = i+1
     # Preallocate a dictionary of numpy arrays (one per column).
     # Adjust the list of columns as needed.
-    columns = ['Chrm', 'Start', 'Length', 'H', 'X', 'U', 'Z',
-               'h', 'x', 'u', 'z', 'FreqC', 'Met', 'NotC']
-    data_dict = {col: np.zeros(total_alignments, dtype=np.uint32) for col in columns}
+
+    data_dict = {col: np.zeros(total_alignments, dtype=np.uint32) for col in COLUMNS}
 
     # Second pass: populate arrays for each alignment
     for i, a in enumerate(iter_alignments(bamfn, only_cannonical_chrm)):
@@ -102,13 +104,14 @@ def get_table(bamfn, only_cannonical_chrm=False) -> pd.DataFrame:
 
         # Static fields
         data_dict['Chrm'][i] = CHRM_MAP[a.reference_name]
-        data_dict['Start'][i] = a.query_alignment_start
+        data_dict['Start'][i] = a.reference_start
         data_dict['Length'][i] = ln
+        data_dict['Read'][i] = 1 if a.is_read1 else 2
 
         # Count glyphs in the methylation string.
         c = Counter(metstr)
-        # Rename '.' to 'NotC'
-        c['NotC'] = c.get('.', 0)
+        # Rename '.' to 'D'
+        c['D'] = c.get('.', 0)
         if '.' in c:
             del c['.']
 
@@ -136,6 +139,7 @@ def get_table(bamfn, only_cannonical_chrm=False) -> pd.DataFrame:
     df = table.to_pandas(types_mapper=pd.ArrowDtype, self_destruct=True)
 
     return df
+
 
 def plot_len_pmet(readstats:pd.DataFrame, exclude_CH=False,
                   legend=True, hexbin=True) -> None:
@@ -236,7 +240,7 @@ n3	2	allCpG	1	42	10M	*	0	10	NNNNNNNNNN	ABCDEFGHIJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:...
         assert df.loc[1, 'FreqC'] == 4
         assert df.loc[1, 'Met'] == 4
         assert df.loc[2, 'Length'] == 10
-        assert df.loc[2, 'NotC'] == 10
+        assert df.loc[2, 'D'] == 10
 
     print("Tests finished.")
 
@@ -247,7 +251,7 @@ Generate table of per-read methylation stats, and plot length vs methylation sta
 Bismark BAM.
 
 Output table counts methylation type, context and other read stats. Uses Bismark letter 
-coding for methylation, except with "NotC" column giving counts of non-C nucleotides instead of ".".
+coding for methylation, except with "D" column giving counts of non-C nucleotides instead of ".".
 """
 )
 class ReadStatsArgs:
@@ -284,10 +288,10 @@ def cli_pos_beta(args:ReadStatsArgs=None):
     if args is None:
         args = datargs.parse(ReadStatsArgs)
     if args.sample_name is None:
-        samp = args.bamfn.stem+'.'
+        samp = args.bamfn.stem
     else:
         samp = args.sample_name
-    out_prefix = Path(args.out_dir) / (samp+'.')
+    out_prefix = Path(args.out_dir) / samp
 
     run(
         args.bamfn,
@@ -298,6 +302,8 @@ def cli_pos_beta(args:ReadStatsArgs=None):
     )
 
 if __name__ == '__main__':
-    # print('Running test.')
-    # ttest()
-    cli_pos_beta()
+    import sys
+    if sys.argv[1] == 'test':
+        ttest()
+    else:
+        cli_pos_beta()
