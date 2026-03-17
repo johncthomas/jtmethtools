@@ -74,11 +74,10 @@ class FilterCHArgs:
         aliases=['-o',],
     ))
     # positional arg at the end
-    bams: list[Path] = arg(
+    bam: Path = arg(
         '-b',
         metavar='BAM',
-        nargs='+',
-        help="Bismark BAM files.",
+        help="Bismark BAM file.",
     )
     quiet: bool = field(
         metadata=dict(
@@ -110,7 +109,7 @@ class FilterCHArgs:
 
 
 def main(args: FilterCHArgs = None):
-    """Call remove_ch_methylation on each BAM file in the input, using given command-line args."""
+    """Call remove_ch_methylation on BAM file, using given command-line args."""
 
     if args is None:
         args = parse(FilterCHArgs)
@@ -133,22 +132,19 @@ def main(args: FilterCHArgs = None):
 
     now = datetime.now().strftime("%Y%m%d_%H-%M-%S")
 
-    for bam in args.bams:
-        bam = Path(bam)
-        log_id = None
-        if not args.no_log_file:
-            log_dir = outdir / "log"
-            log_dir.mkdir(parents=True, exist_ok=True)
-            log_path = log_dir / f"{bam.name}.{now}.log"
-            log_id = logger.add(log_path,
-                                level='INFO',
-                                format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {message}")
+    bam = Path(args.bam)
+    log_id = None
+    if not args.no_log_file:
+        log_dir = outdir / "log"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / f"{bam.name}.{now}.log"
+        log_id = logger.add(log_path,
+                            level='INFO')
 
-        outfn = outdir / bam.name.replace('.bam', '.noCH.bam')
-        remove_ch_methylation(bam, outfn, versbose=(not args.quiet), paired_end=args.pe)
+    outfn = outdir / bam.name.replace('.bam', '.noCH.bam')
+    remove_ch_methylation(bam, outfn, versbose=(not args.quiet), paired_end=args.pe)
 
-        if log_id is not None:
-            logger.remove(log_id)
+
 
 if __name__ == '__main__':
     main()
