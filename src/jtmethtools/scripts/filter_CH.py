@@ -64,7 +64,7 @@ def remove_ch_methylation(bam_file: Path | str, output_file: Path | str,
 Write a new BAM file that does not contain alignments with CH methylation.
 """
 )
-class ReadStatsArgs:
+class FilterCHArgs:
     outdir: Path = field(metadata=dict(
         required=True,
         help='Output directory. Files will be written with "noCH.bam" suffix.',
