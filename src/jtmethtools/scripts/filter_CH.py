@@ -84,14 +84,21 @@ class ReadStatsArgs:
         )
     )
 
-def main():
-    args = parse(ReadStatsArgs)
+def main(args: FilterCHArgs = None):
+    """Call remove_ch_methylation on each BAM file in the input, using given command-line args."""
+
+    if args is None:
+        args = parse(FilterCHArgs)
+
+    if args.pe == args.se:
+        logger.error("Exactly one of --pe or --se must be set.")
+        sys.exit(1)
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
 
     for bam in args.bams:
         outfn = outdir / bam.name.replace('.bam', '.noCH.bam')
-        remove_ch_methylation(bam, outfn, versbose=(not args.quiet))
+        remove_ch_methylation(bam, outfn, versbose=(not args.quiet), paired_end=args.pe)
 
 main()
