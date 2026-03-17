@@ -126,7 +126,7 @@ def get_table(bamfn, only_cannonical_chrm=False) -> pd.DataFrame:
     freqc_keys = ['H', 'X', 'U', 'Z', 'h', 'x', 'u', 'z']
     met_keys = ['H', 'X', 'Z', 'U']
 
-    # Sum across the selected keys, vectorized.
+    # Sum across the selected keys.
     data_dict['FreqC'] = sum(data_dict[key] for key in freqc_keys)
     data_dict['Met'] = sum(data_dict[key] for key in met_keys)
 
