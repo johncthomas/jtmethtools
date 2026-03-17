@@ -126,7 +126,9 @@ def main(args: FilterCHArgs = None):
     logger.remove()
     if not args.quiet:
         logger.add(
-            sys.stderr, colorize=True,
+            sys.stderr,
+            level='INFO',
+            colorize=True,
         )
 
     now = datetime.now().strftime("%Y%m%d_%H-%M-%S")
@@ -139,6 +141,7 @@ def main(args: FilterCHArgs = None):
             log_dir.mkdir(parents=True, exist_ok=True)
             log_path = log_dir / f"{bam.name}.{now}.log"
             log_id = logger.add(log_path,
+                                level='INFO',
                                 format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {message}")
 
         outfn = outdir / bam.name.replace('.bam', '.noCH.bam')
