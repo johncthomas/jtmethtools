@@ -1,5 +1,7 @@
 """From a BAM file, write a new bam that does not contain alignments with CH methylation."""
 
+import sys
+from datetime import datetime
 import pysam
 from jtmethtools.alignments import get_bismark_met_str, iter_bam_segments
 from datargs import argsclass, arg, parse
@@ -29,7 +31,7 @@ def remove_ch_methylation(bam_file: Path | str, output_file: Path | str,
         written = 0
         ch_count = 0
         if versbose:
-            print(f"Writing to {output_file}")
+            logger.info(f"Writing to {output_file}")
 
         for alns in iter_bam_segments(bam_file, paired_end=paired_end):
             total_alignments += 1
@@ -43,7 +45,6 @@ def remove_ch_methylation(bam_file: Path | str, output_file: Path | str,
                 # Find symbols in met_str that overlap with bad symbols
                 #   This method chosen after some benchmarking.
                 if not set(met_str).isdisjoint(ch_meth_symbols):
-                    # print(set(met_str))
                     has_ch = True
             if has_ch:
                 ch_count += 1
@@ -55,8 +56,10 @@ def remove_ch_methylation(bam_file: Path | str, output_file: Path | str,
                     bam_out.write(alignment)
 
         if versbose:
-            print(
-                f"{ch_count}/{total_alignments} ({round(ch_count / total_alignments * 100, 1):}%) {'paired ' if paired_end else ''}alignments with methylated CH discarded. ")
+            logger.info(
+                f"{ch_count}/{total_alignments} ({round(ch_count / total_alignments * 100, 1):}%) "
+                f"{'paired ' if paired_end else ''}alignments with methylated CH discarded."
+            )
 
 
 @argsclass(
@@ -83,6 +86,28 @@ class FilterCHArgs:
             help="Don't print logging messages."
         )
     )
+    pe: bool = field(
+        default=False,
+        metadata=dict(
+            required=False,
+            help="Whether the input BAM files are paired-end. Either --pe or --se must be set."
+        )
+    )
+    se: bool = field(
+        default=False,
+        metadata=dict(
+            required=False,
+            help="Whether the input BAM files are single-end. Either --pe or --se must be set."
+        )
+    )
+    no_log_file: bool = field(
+        default=False,
+        metadata=dict(
+            required=False,
+            help="Disable writing log files to {outdir}/log/.",
+        )
+    )
+
 
 def main(args: FilterCHArgs = None):
     """Call remove_ch_methylation on each BAM file in the input, using given command-line args."""
@@ -97,8 +122,30 @@ def main(args: FilterCHArgs = None):
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
 
+    # Configure logger: remove default sink, add colorized stderr sink
+    logger.remove()
+    if not args.quiet:
+        logger.add(
+            sys.stderr, colorize=True,
+        )
+
+    now = datetime.now().strftime("%Y%m%d_%H-%M-%S")
+
     for bam in args.bams:
+        bam = Path(bam)
+        log_id = None
+        if not args.no_log_file:
+            log_dir = outdir / "log"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_path = log_dir / f"{bam.name}.{now}.log"
+            log_id = logger.add(log_path,
+                                format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {message}")
+
         outfn = outdir / bam.name.replace('.bam', '.noCH.bam')
         remove_ch_methylation(bam, outfn, versbose=(not args.quiet), paired_end=args.pe)
 
-main()
+        if log_id is not None:
+            logger.remove(log_id)
+
+if __name__ == '__main__':
+    main()
