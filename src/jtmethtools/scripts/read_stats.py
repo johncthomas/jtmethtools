@@ -1,3 +1,4 @@
+import sys
 from typing import Tuple, Iterator
 from pathlib import Path
 import  os
@@ -11,12 +12,16 @@ import pyarrow as pa
 import numpy as np
 import numpy.typing as npt
 import datargs
+from loguru import logger
 
 from jtmethtools.alignments import get_bismark_met_str
 from jtmethtools.util import write_array, read_array
 
 
-COLUMNS = ( 'Chrm', 'Start', 'Length', 'H', 'X', 'U', 'Z', 'h', 'x', 'u', 'z', 'D', 'FreqC', 'Met', "Read")
+
+
+
+COLUMNS = ( 'Chrm', 'Start', 'Length', 'H', 'X', 'U', 'Z', 'h', 'x', 'u', 'z', 'NotC', 'FreqC', 'Met', "Read")
 COLI = {c:i for i, c in enumerate(COLUMNS)}
 
 CHRM_MAP:dict[str, int] = {}
@@ -26,6 +31,35 @@ for i, c in enumerate(list(range(1, 24))+['X', 'Y']):
 
 VALID_CHRM = set(list(CHRM_MAP.keys()))
 
+
+def table2df(table: pa.Table) -> pd.DataFrame:
+    """Convert a pyarrow Table to a pandas DataFrame, converting dictionary types to pandas categorical types."""
+    mapping = {schema.type: pd.ArrowDtype(schema.type) for schema in table.schema}
+
+    return table.to_pandas(types_mapper=mapping.get, ignore_metadata=True)
+
+
+def read_parquet(fn) -> pd.DataFrame:
+    """load a parquet file and convert to a pandas dataframe.
+    Works when pd.read_parquet fails on the dictionary types."""
+    tls = pa.parquet.read_table(fn)
+    tls = table2df(tls)
+    return tls
+
+# Create mappings for dictionary encodings
+def mapping_to_pa_dict(mapping: dict[str, int], values: npt.NDArray, ) -> pa.DictionaryArray:
+    """Take a encoded numpy array and the dictionary that decodes
+    it, return the dictionary encoded arrow array."""
+    # get values in the order of the mapping so they'll be the same in the
+    #  final dictionary
+    i2s = {v: k for k, v in mapping.items()}
+    dict_values = [i2s[i] for i in range(max(i2s.keys()) + 1)]
+    dictionary = pa.array(dict_values, type=pa.string())
+
+    # Convert to dict array. Pandas needs 32bit array to convert to
+    indices = pa.array(values, type=pa.int32())
+    dict_array = pa.DictionaryArray.from_arrays(indices, dictionary)
+    return dict_array
 
 def iter_alignments(bamfn, only_cannon_chrm) -> Iterator[pysam.AlignedSegment]:
     for i, a in enumerate(pysam.AlignmentFile(bamfn)):
@@ -45,100 +79,136 @@ def iter_alignments(bamfn, only_cannon_chrm) -> Iterator[pysam.AlignedSegment]:
             yield a
 
 
-def get_table_np(bamfn, only_cannonical_chrm=False) -> npt.NDArray[np.uint32]:
+def get_memory_usage():
+    """Get current memory usage in MB."""
+    import psutil
+    process = psutil.Process(os.getpid())
+    mem = process.memory_info().rss / (1024 * 1024)
+    return mem
+
+
+def _get_stats_array(bamfn, only_cannonical_chrm=False) -> npt.NDArray[np.uint32]:
     """Generate table of per-read methylation stats from a Bismark BAM."""
-    # depreciated in favor of get_table, which uses arrow backed pandas DF instead of numpy array.
+    logger.info(f"Initial memory usage: {get_memory_usage():.2f} MB")
     i = 0
     for i, _ in enumerate(iter_alignments(bamfn, only_cannonical_chrm)):
         pass
-    total_alignments = i+1
+    total_alignments = i + 1
+    logger.info(f"Total alignments: {total_alignments}")
 
     # create arrays to hold the data
     table = np.zeros((total_alignments, len(COLUMNS)), dtype=np.uint32)
-
+    logger.info('Created empty table, memory usage: {:.2f} MB'.format( get_memory_usage() ))
+    chrm_i = COLI['Chrm']
+    start_i = COLI['Start']
+    length_i = COLI['Length']
+    read_i = COLI['Read']
     for i, a in enumerate(iter_alignments(bamfn, only_cannonical_chrm)):
         ln = a.query_length
 
         metstr = get_bismark_met_str(a)
 
-        row = np.zeros(len(COLUMNS), dtype=np.uint32)
-        row[COLI['Chrm']] = CHRM_MAP[a.reference_name]
-        row[COLI['Start']] = a.query_alignment_start
-        row[COLI['Length']] = ln
-        row[COLI['Read']] = 'R1' if a.is_read1 else 'R2'
+        #row = table[i]
+        table[i, chrm_i] = CHRM_MAP[a.reference_name]
+        table[i, start_i] = a.query_alignment_start
+        table[i, length_i] = ln
+        table[i, read_i] = 1 if a.is_read1 else 2
 
 
         # count glyphs in the methylation string.
         c = dict(Counter(metstr))
+        logger.debug(metstr)
+        logger.debug(c)
         # Give '.' a better name
-        c['D'] = c['.']
+        c['NotC'] = c['.']
         del c['.']
         for k, v in c.items():
-            row[COLI[k]] = v
-
-        table[i] = row
+            table[i, COLI[k]] = v
 
     c_cols = [COLI[k] for k in 'H X U Z h x u z'.split()]
     met_cols = [COLI[k] for k in 'H X Z U'.split()]
     table[:, COLI['FreqC']] = table[:, c_cols].sum(1)
     table[:, COLI['Met']] = table[:, met_cols].sum(1)
 
+    logger.info('Populated table, memory usage: {:.2f} MB'.format(get_memory_usage()))
+
     return table
 
 
-def get_table(bamfn, only_cannonical_chrm=False) -> pd.DataFrame:
-    """Generate table of per-read methylation stats from a Bismark BAM."""
-    i = 0
-    for i, _ in enumerate(iter_alignments(bamfn, only_cannonical_chrm)):
-        pass
-    total_alignments = i+1
-    # Preallocate a dictionary of numpy arrays (one per column).
-    # Adjust the list of columns as needed.
+def _array_to_df(table: npt.NDArray[np.uint32]) -> pd.DataFrame:
+    """Convert the numpy array of read stats to an Arrow backed DataFrame."""
+    cols_not_chrm = [col for col in COLUMNS if col != 'Chrm']
+    arrow_dict = {'Chrm': mapping_to_pa_dict(CHRM_MAP, table[:, COLI['Chrm']])}
+    arrow_dict |= {col: pa.array(table[:, COLI[col]]) for col in cols_not_chrm}
 
-    data_dict = {col: np.zeros(total_alignments, dtype=np.uint32) for col in COLUMNS}
-
-    # Second pass: populate arrays for each alignment
-    for i, a in enumerate(iter_alignments(bamfn, only_cannonical_chrm)):
-        ln = a.query_length
-        metstr = get_bismark_met_str(a)
-
-        # Static fields
-        data_dict['Chrm'][i] = CHRM_MAP[a.reference_name]
-        data_dict['Start'][i] = a.reference_start
-        data_dict['Length'][i] = ln
-        data_dict['Read'][i] = 1 if a.is_read1 else 2
-
-        # Count glyphs in the methylation string.
-        c = Counter(metstr)
-        # Rename '.' to 'D'
-        c['D'] = c.get('.', 0)
-        if '.' in c:
-            del c['.']
-
-        # For each key from the counter that matches one of our columns, set the value.
-        for key, v in c.items():
-            if key in data_dict:
-                data_dict[key][i] = v
-        # (Any columns not updated remain at 0.)
-
-    # Compute derived columns FreqC and Met.
-    # Define which keys to sum over for each derived column.
-    freqc_keys = ['H', 'X', 'U', 'Z', 'h', 'x', 'u', 'z']
-    met_keys = ['H', 'X', 'Z', 'U']
-
-    # Sum across the selected keys.
-    data_dict['FreqC'] = sum(data_dict[key] for key in freqc_keys)
-    data_dict['Met'] = sum(data_dict[key] for key in met_keys)
-
-    # Convert each numpy array to a pyarrow array.
-    # Zero-copy is achieved for many numeric types.
-    arrow_dict = {col: pa.array(arr) for col, arr in data_dict.items()}
-
-    # convert to arrow backed DF.
     table = pa.table(arrow_dict)
     df = table.to_pandas(types_mapper=pd.ArrowDtype, self_destruct=True)
-
     return df
+
+def get_stats_df(bamfn, only_cannonical_chrm=False) -> pd.DataFrame:
+    """Generate table of per-read methylation stats from a Bismark BAM."""
+    arr = _get_stats_array(bamfn, only_cannonical_chrm)
+    df = _array_to_df(arr)
+    return df
+
+
+#
+# def get_table(bamfn, only_cannonical_chrm=False) -> pd.DataFrame:
+#     """Generate table of per-read methylation stats from a Bismark BAM."""
+#     i = 0
+#     logger.info('Counting total alignments...')
+#     for i, _ in enumerate(iter_alignments(bamfn, only_cannonical_chrm)):
+#         pass
+#     total_alignments = i + 1
+#     logger.info(f"Total alignments: {total_alignments}")
+#
+#     # Preallocate a dictionary of numpy arrays (one per column).
+#     # Adjust the list of columns as needed.
+#
+#     data_dict = {col: np.zeros(total_alignments, dtype=np.uint32) for col in COLUMNS}
+#
+#     # Second pass: populate arrays for each alignment
+#     for i, a in enumerate(iter_alignments(bamfn, only_cannonical_chrm)):
+#         ln = a.query_length
+#         metstr = get_bismark_met_str(a)
+#
+#         # Static fields
+#         data_dict['Chrm'][i] = CHRM_MAP[a.reference_name]
+#         data_dict['Start'][i] = a.reference_start
+#         data_dict['Length'][i] = ln
+#         data_dict['Read'][i] = 1 if a.is_read1 else 2
+#
+#         # Count glyphs in the methylation string.
+#         c = Counter(metstr)
+#         # Rename '.' to 'NotC'
+#         c['NotC'] = c.get('.', 0)
+#         if '.' in c:
+#             del c['.']
+#
+#         # For each key from the counter that matches one of our columns, set the value.
+#         for key, v in c.items():
+#             if key in data_dict:
+#                 data_dict[key][i] = v
+#         # (Any columns not updated remain at 0.)
+#
+#     # Compute derived columns FreqC and Met.
+#     # Define which keys to sum over for each derived column.
+#     freqc_keys = ['H', 'X', 'U', 'Z', 'h', 'x', 'u', 'z']
+#     met_keys = ['H', 'X', 'Z', 'U']
+#
+#     # Sum across the selected keys.
+#     data_dict['FreqC'] = sum(data_dict[key] for key in freqc_keys)
+#     data_dict['Met'] = sum(data_dict[key] for key in met_keys)
+#
+#     # Convert each numpy array to a pyarrow array.
+#     # Zero-copy is achieved for many numeric types.
+#     arrow_dict = {col: pa.array(arr) for col, arr in data_dict.items()}
+#
+#     # convert to arrow backed DF.
+#     table = pa.table(arrow_dict)
+#     df = table.to_pandas(types_mapper=pd.ArrowDtype, self_destruct=True)
+#
+#     return df
 
 
 def plot_len_pmet(readstats:pd.DataFrame, exclude_CH=False,
@@ -187,8 +257,12 @@ def run(bamfn, out_prefix, do_plot, write_table, cannon_chrm):
     if not os.path.isdir(out_prefix.parent):
         os.makedirs(out_prefix.parent)
 
-    table = get_table(bamfn, cannon_chrm)
-
+    table = get_stats_df(bamfn, only_cannonical_chrm=cannon_chrm)
+    logger.info(f"Generated stats table, memory usage: {get_memory_usage():.2f} MB")
+    if write_table:
+        table.to_parquet(
+            str(out_prefix)+'.read-stats.parquet',
+        )
     if do_plot:
         plot_len_pmet(table)
 
@@ -199,23 +273,13 @@ def run(bamfn, out_prefix, do_plot, write_table, cannon_chrm):
         )
         plt.close()
 
-    if write_table:
-        table.to_parquet(
-            str(out_prefix)+'.read-stats.parquet',
-        )
-        # write_array(
-        #     table,
-        #     str(out_prefix)+'.read-stats.arr.gz',
-        #     additional_metadata={
-        #         'columns': COLUMNS,
-        #         'description': "Read stats from Bismark BAM.",
-        #         'bamfn': str(bamfn),
-        #     }
-        # )
 
 
 def ttest():
     from tempfile import TemporaryDirectory
+    logger.remove()
+    logger.add(print, level="DEBUG", colorize=True)
+
     test_sam = """\
 @HD	VN:1.0	SO:none
 @SQ	SN:allCpG	LN:10
@@ -232,17 +296,22 @@ n3	2	allCpG	1	42	10M	*	0	10	NNNNNNNNNN	ABCDEFGHIJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:...
             f.write(test_sam)
         # run main
         run(samfn, tmpdir / 'test', True, True, cannon_chrm=False)
-        df = pd.read_parquet(tmpdir/'test.read-stats.parquet')
 
+        # read with pyarrow
+        df = read_parquet(tmpdir/'test.read-stats.parquet')
+        print(df)
         # check some numbers in df
         assert df.loc[0, 'FreqC'] == 8
         assert df.loc[0, 'Met'] == 4
         assert df.loc[1, 'FreqC'] == 4
         assert df.loc[1, 'Met'] == 4
         assert df.loc[2, 'Length'] == 10
-        assert df.loc[2, 'D'] == 10
+        assert df.loc[2, 'NotC'] == 10
 
     print("Tests finished.")
+
+
+
 
 
 @datargs.argsclass(
@@ -251,7 +320,7 @@ Generate table of per-read methylation stats, and plot length vs methylation sta
 Bismark BAM.
 
 Output table counts methylation type, context and other read stats. Uses Bismark letter 
-coding for methylation, except with "D" column giving counts of non-C nucleotides instead of ".".
+coding for methylation, except with "NotC" column giving counts of non-C nucleotides instead of ".".
 """
 )
 class ReadStatsArgs:
@@ -282,15 +351,24 @@ class ReadStatsArgs:
         default=False,
         help='Do not write table of read stats.'
     ))
+    quiet: bool = field(metadata=dict(
+        default=False,
+        help="Don't print logging messages."
+    ))
 
 
-def cli_pos_beta(args:ReadStatsArgs=None):
+def read_stats_cli(args:ReadStatsArgs=None):
+    """Command line interface for read stats."""
     if args is None:
         args = datargs.parse(ReadStatsArgs)
     if args.sample_name is None:
         samp = args.bamfn.stem
     else:
         samp = args.sample_name
+    logger.remove()
+    if not args.quiet:
+        logger.add(sys.stdout, level="INFO", colorize=True)
+
     out_prefix = Path(args.out_dir) / samp
 
     run(
@@ -300,10 +378,14 @@ def cli_pos_beta(args:ReadStatsArgs=None):
         write_table=not args.no_table,
         cannon_chrm=not args.all_chrm
     )
-
+#
+# logger.add(sys.stdout, level="INFO", colorize=True)
+# tbl = _get_stats_array('/media/jcthomas/JCT61-1/Data/250330_3datasets/CMDL19003184.deduplicated.sorted.bam')
+# table = (tbl, '/home/jcthomas/test_read_stats.parquet')
+#ttest_np()
 if __name__ == '__main__':
     import sys
-    if sys.argv[1] == 'test':
+    if (len(sys.argv) > 1) and (sys.argv[1] == 'test'):
         ttest()
     else:
-        cli_pos_beta()
+        read_stats_cli()
