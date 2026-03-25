@@ -5,17 +5,20 @@ import tarfile
 
 import tempfile
 
+import pyarrow as pa
 import pandas as pd
 import numpy as np
 from numpy.typing import NDArray
 
 from typing import Tuple
-
+from datetime import datetime
 import json
 from loguru import logger
 logger.remove()
 
 from attrs import define
+
+
 
 def set_logger(min_level='DEBUG'):
 
@@ -31,6 +34,18 @@ type SplitTable = dict[str, pd.DataFrame]
 CANNONICAL_CHRM = [str(i) for i in range(1, 23)] + ['X', 'Y', 'MT']
 CANNONICAL_CHRM += ['chr' + c for c in CANNONICAL_CHRM]
 CANNONICAL_CHRM = set(CANNONICAL_CHRM)
+
+def setup_logfile(log_dir: Path, sample: str) -> int:
+    """Set up a log file in with path {log_dir}/{sample}.{timestamp}.log,
+    and add it as a sink to the logger. log_dir should probably end with /log.
+
+    Returns the log ID of the added sink, which can be used to remove it later if needed."""
+    now = datetime.now().strftime("%Y%m%d_%H-%M-%S")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"{sample}.{now}.log"
+    log_id = logger.add(log_path,
+                        level='INFO')
+    return log_id
 
 
 def fasta_to_dict(fn: str|Path, full_desc=False) -> dict[str, str]:
@@ -449,3 +464,20 @@ def generate_sam_file(alignments: list[SamAlignment], sorting: str = 'coordinate
     sam_file += "\n".join(str(alignment) for alignment in alignments)
 
     return sam_file
+
+
+# Create mappings for dictionary encodings
+def mapping_to_pa_dict(mapping:dict[str, int], values:NDArray, ) -> pa.DictionaryArray:
+
+    """Take a encoded numpy array and the dictionary that decodes
+    it, return the dictionary encoded arrow array."""
+    # get values in the order of the mapping so they'll be the same in the
+    #  final dictionary
+    i2s = {v:k for k, v in mapping.items()}
+    dict_values = [i2s[i] for i in range(max(i2s.keys()) + 1)]
+    dictionary = pa.array(dict_values, type=pa.string())
+
+    # Convert to dict array. Pandas needs 32bit array to convert to
+    indices = pa.array(values, type=pa.int32())
+    dict_array = pa.DictionaryArray.from_arrays(indices, dictionary)
+    return dict_array
