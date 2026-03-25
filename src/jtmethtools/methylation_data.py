@@ -39,6 +39,7 @@ from jtmethtools.alignments import iter_bam_segments
 logger.remove()
 
 def table2df(table: pa.Table) -> pd.DataFrame:
+    """Convert a pyarrow Table to a pandas DataFrame, converting dictionary types to pandas categorical types."""
     mapping = {schema.type: pd.ArrowDtype(schema.type) for schema in table.schema}
 
     return table.to_pandas(types_mapper=mapping.get, ignore_metadata=True)
