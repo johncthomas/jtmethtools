@@ -42,10 +42,14 @@ def remove_ch_methylation(bam_file: Path | str, output_file: Path | str,
 
                 met_str = get_bismark_met_str(alignment)
 
+                if met_str is None:
+                    continue
+
                 # Find symbols in met_str that overlap with bad symbols
                 #   This method chosen after some benchmarking.
                 if not set(met_str).isdisjoint(ch_meth_symbols):
                     has_ch = True
+                    break
             if has_ch:
                 ch_count += 1
             if not has_ch:
@@ -56,10 +60,13 @@ def remove_ch_methylation(bam_file: Path | str, output_file: Path | str,
                     bam_out.write(alignment)
 
         if versbose:
-            logger.info(
-                f"{ch_count}/{total_alignments} ({round(ch_count / total_alignments * 100, 1):}%) "
-                f"{'paired ' if paired_end else ''}alignments with methylated CH discarded."
-            )
+            if total_alignments == 0:
+                logger.info("No alignments found in input BAM.")
+            else:
+                logger.info(
+                    f"{ch_count}/{total_alignments} ({round(ch_count / total_alignments * 100, 1):}%) "
+                    f"{'paired ' if paired_end else ''}alignments with methylated CH discarded."
+                )
 
 
 @argsclass(
@@ -114,13 +121,6 @@ def main(args: FilterCHArgs = None):
     if args is None:
         args = parse(FilterCHArgs)
 
-    if args.pe == args.se:
-        logger.error("Exactly one of --pe or --se must be set.")
-        sys.exit(1)
-
-    outdir = Path(args.outdir)
-    outdir.mkdir(parents=True, exist_ok=True)
-
     # Configure logger: remove default sink, add colorized stderr sink
     logger.remove()
     if not args.quiet:
@@ -129,6 +129,13 @@ def main(args: FilterCHArgs = None):
             level='INFO',
             colorize=True,
         )
+
+    if args.pe == args.se:
+        logger.error("Exactly one of --pe or --se must be set.")
+        sys.exit(1)
+
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
 
     now = datetime.now().strftime("%Y%m%d_%H-%M-%S")
 
@@ -143,6 +150,9 @@ def main(args: FilterCHArgs = None):
 
     outfn = outdir / bam.name.replace('.bam', '.noCH.bam')
     remove_ch_methylation(bam, outfn, versbose=(not args.quiet), paired_end=args.pe)
+
+    if log_id is not None:
+        logger.remove(log_id)
 
 
 
