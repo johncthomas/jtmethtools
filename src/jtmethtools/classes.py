@@ -160,16 +160,19 @@ class CpGIndex:
     def from_cpg_list(
             cls,
             cpg_list: list[tuple[str, int]],
-            make_one_indexed: bool,
-            is_one_indexed=False,
+            is_one_indexed:bool,
+            make_one_indexed: bool = False,
             region_names: tuple[str, ...] = None,
 
     ) -> Self:
         """Create a CpGIndex from a list of (chromosome, position) tuples.
 
-        If CpG list is already one indexed, set `is_one_indexed` to True.
+        If CpG list position is already one indexed, set `is_one_indexed` to True.
         If you want to make it one indexed, set `make_one_indexed` to True, this will set
             the one_indexed attribute to True and add 1 to all positions in the cpg_list and locus2index."""
+        if is_one_indexed and make_one_indexed:
+            raise ValueError("Cannot set both is_one_indexed and make_one_indexed to True. "
+                             "If it's already one indexed, there's no need to make it one indexed.")
         pos2index = {
             (pos[0], pos[1]): idx for idx, pos in enumerate(cpg_list)
         }
@@ -194,7 +197,8 @@ class CpGIndex:
         offset = 1 if make_one_indexed else 0
         for chrm, seq in genome.sequences.items():
             cpg_list.extend((chrm, m.start()+offset) for m in re.finditer('(?=CG)', seq))
-        return cls.from_cpg_list(cpg_list, region_names=region_names, make_one_indexed=make_one_indexed)
+        return cls.from_cpg_list(cpg_list, region_names=region_names,
+                                 make_one_indexed=make_one_indexed, is_one_indexed=False)
 
     @classmethod
     def from_fasta(
@@ -211,17 +215,21 @@ class CpGIndex:
             self,
             regions: Regions,
     ) -> Self:
+        """Create a new CpGIndex containing only CpG sites that fall within the given regions."""
 
         new_cpg_list = []
         cpg_regions:list[str] = []
         for chrm, loc in self.cpg_list:
 
-            hit = regions.region_at_locus(chrm, loc)
+            hit = regions.region_at_locus(chrm, loc-self.one_indexed)
             if hit:
                 cpg_regions.append(hit)
                 new_cpg_list.append((chrm, loc))
 
-        return CpGIndex.from_cpg_list(new_cpg_list, region_names=tuple(cpg_regions))
+        return CpGIndex.from_cpg_list(
+            new_cpg_list,
+            region_names=tuple(cpg_regions),
+            is_one_indexed=self.one_indexed,)
 
     def __hash__(self):
         # as it's frozen, we can use the id of the object as a hash.
@@ -266,7 +274,8 @@ class Genome:
 
     @classmethod
     def from_fasta(cls, fn: str | Path,
-                   full_desc=False, cannonical_only=True) -> Self:
+                   full_desc=False,
+                   cannonical_only=True) -> Self:
         """Load a fasta file into a Genome object"""
         seqs =  fasta_to_dict(fn, full_desc=full_desc)
         if cannonical_only:
@@ -298,19 +307,20 @@ class Genome:
 
     @cached_property
     def cpg_index(self) -> CpGIndex:
-        import warnings
-        # give depreciation warning
-        with warnings.catch_warnings():
-            warnings.simplefilter("once", DeprecationWarning)
-            warnings.warn("Accessing cpg_index as a property is deprecated. Use get_cpg_index() instead. "
-                          "(An @cached_property is incompatible with a frozen dataclass - "
-                          "it recalculates every time its accessed)", DeprecationWarning)
-        idx = CpGIndex.from_genome(self)
-        return idx
+        raise NotImplementedError("Depreciated. Use get_cpg_index() instead.")
+        # import warnings
+        # # give depreciation warning
+        # with warnings.catch_warnings():
+        #     warnings.simplefilter("once", DeprecationWarning)
+        #     warnings.warn("Accessing cpg_index as a property is deprecated. Use get_cpg_index() instead. "
+        #                   "(An @cached_property is incompatible with a frozen dataclass - "
+        #                   "it recalculates every time its accessed)", DeprecationWarning)
+        # idx = CpGIndex.from_genome(self)
+        # return idx
 
-    def get_cpg_index(self) -> CpGIndex:
+    def get_cpg_index(self, one_indexed=False) -> CpGIndex:
         """Get the CpG index for this genome."""
-        return CpGIndex.from_genome(self)
+        return CpGIndex.from_genome(self, make_one_indexed=one_indexed)
 
     @property
     def chromsomes(self) -> list[str]:
