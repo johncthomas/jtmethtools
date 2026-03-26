@@ -699,8 +699,8 @@ def write_coverage(locus_data:pd.DataFrame, outfile:str|Path) -> None:
     if "Chrm" not in locus_data.columns:
         locus_data = locus_data.reset_index()
 
-    ld = locus_data.head(10000)
-
+    #ld = locus_data.head(10000)
+    ld = locus_data
     g = ld.groupby(['Chrm', 'Position'])
     m = g.MetCpG.sum()
     n = g.MetCpG.count()
