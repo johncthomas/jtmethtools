@@ -11,12 +11,15 @@ from loguru import logger
 
 
 def remove_ch_methylation(bam_file: Path | str, output_file: Path | str,
-                          paired_end: bool, versbose=True):
+                          paired_end: bool, req_CpH:bool, verbose=True):
     """Write a new BAM file that does not contain alignments with CH methylation.
     A mCH in either segment of a paired-end read will cause the entire read to be discarded.
+
+
     """
 
     ch_meth_symbols = {'X', 'H', 'U'}
+    ch_symbols = {'X', 'H', 'U', 'x', 'h', 'u'}
 
     with pysam.AlignmentFile(bam_file) as b:
         header_d = b.header.to_dict()
@@ -29,49 +32,64 @@ def remove_ch_methylation(bam_file: Path | str, output_file: Path | str,
     with pysam.AlignmentFile(output_file, "wb", header=header) as bam_out:
         total_alignments = 0
         written = 0
-        ch_count = 0
-        if versbose:
+        mCH_count = 0
+        noCH_count = 0
+        if verbose:
             logger.info(f"Writing to {output_file}")
 
         for alns in iter_bam_segments(bam_file, paired_end=paired_end):
             total_alignments += 1
-            has_ch = False
+            has_mCH = False
+            no_CH = False
             for alignment in alns:
                 if alignment is None:
                     continue
 
                 met_str = get_bismark_met_str(alignment)
-
+                set_met = set(met_str)
                 if met_str is None:
                     continue
 
                 # Find symbols in met_str that overlap with bad symbols
                 #   This method chosen after some benchmarking.
-                if not set(met_str).isdisjoint(ch_meth_symbols):
-                    has_ch = True
+                if not set_met.isdisjoint(ch_meth_symbols):
+                    has_mCH = True
                     break
-            if has_ch:
-                ch_count += 1
-            if not has_ch:
+
+                if req_CpH and set_met.isdisjoint(ch_symbols):
+                    no_CH = True
+                    break
+
+            if has_mCH:
+                mCH_count += 1
+            elif req_CpH and no_CH:
+                noCH_count += 1
+            else:
                 written += 1
                 for alignment in alns:
                     if alignment is None:
                         continue
                     bam_out.write(alignment)
 
-        if versbose:
+        if verbose:
             if total_alignments == 0:
                 logger.info("No alignments found in input BAM.")
             else:
-                logger.info(
-                    f"{ch_count}/{total_alignments} ({round(ch_count / total_alignments * 100, 1):}%) "
-                    f"{'paired ' if paired_end else ''}alignments with methylated CH discarded."
-                )
+                logstr = (f"{written}/{total_alignments} ({round(written / total_alignments * 100, 1):}%) "
+                    f"{'paired ' if paired_end else ''}alignments written. {mCH_count} alignments methylated CpH removed.")
+                if req_CpH:
+                    logstr += f" {noCH_count} alignments with no CpH context removed ."
+                logger.info(logstr)
 
 
 @argsclass(
     description="""\
 Write a new BAM file that does not contain alignments with CH methylation.
+In EM-seq data, CH methylation is considered to be a technical artifact, 
+that indicates a failure of the whole read.
+
+Optionally remove reads with no CpH sites at all, as these 
+cannot be assessed for the presence of CH methylation.
 """
 )
 class FilterCHArgs:
@@ -104,6 +122,13 @@ class FilterCHArgs:
         metadata=dict(
             required=False,
             help="Whether the input BAM files are single-end. Either --pe or --se must be set."
+        )
+    )
+    req_CpH: bool = field( #todo test
+        default=False,
+        metadata=dict(
+            required=False,
+            help="If set, alignments with no CpH sites at all will be removed."
         )
     )
     no_log_file: bool = field(
@@ -149,7 +174,7 @@ def main(args: FilterCHArgs = None):
                             level='INFO')
 
     outfn = outdir / bam.name.replace('.bam', '.noCH.bam')
-    remove_ch_methylation(bam, outfn, versbose=(not args.quiet), paired_end=args.pe)
+    remove_ch_methylation(bam, outfn, verbose=(not args.quiet), paired_end=args.pe)
 
     if log_id is not None:
         logger.remove(log_id)
