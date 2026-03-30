@@ -126,12 +126,13 @@ class FilterCHArgs:
             help="Whether the input BAM files are single-end. Either --pe or --se must be set."
         )
     )
-    req_CpH: bool = field( #todo test
+    need_CpH: bool = field( #todo test
         default=False,
         metadata=dict(
             required=False,
-            help="If set, alignments with no CpH sites at all will be removed."
-        )
+            help="If set, alignments with no CpH sites at all will be removed.",
+            aliases=['--need-CH', ]
+        ),
     )
     no_log_file: bool = field(
         default=False,
@@ -175,11 +176,10 @@ def main(args: FilterCHArgs = None):
         log_id = logger.add(log_path,
                             level='INFO')
 
-    outfn = outdir / bam.name.replace('.bam', '.noCH.bam')
-    remove_ch_methylation(bam, outfn, verbose=(not args.quiet), paired_end=args.pe)
 
     outfn = outdir / (str(bam.name)[:-4]+'.noCH.bam')
 
+    remove_ch_methylation(bam, outfn, verbose=(not args.quiet), paired_end=args.pe, req_CpH=args.need_CpH)
 
     if log_id is not None:
         logger.remove(log_id)
