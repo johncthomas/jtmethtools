@@ -23,6 +23,8 @@ def remove_ch_methylation(bam_file: Path | str, output_file: Path | str,
 
     with pysam.AlignmentFile(bam_file) as b:
         header_d = b.header.to_dict()
+        if 'PG' not in header_d:
+            header_d['PG'] = []
         header_d['PG'].append(
             {'ID': 'jtmethtools CH removal',
              'CL': f'remove_ch_methylation(bam_file={str(bam_file)}, output_file={str(output_file)}, paired_end={paired_end})'}
@@ -108,7 +110,7 @@ class FilterCHArgs:
         metadata=dict(
             required=False,
             help="Don't print logging messages."
-        )
+        ), default=False
     )
     pe: bool = field(
         default=False,
@@ -150,11 +152,11 @@ def main(args: FilterCHArgs = None):
     logger.remove()
     if not args.quiet:
         logger.add(
-            sys.stderr,
+            sys.stdout,
             level='INFO',
             colorize=True,
         )
-
+    logger.info(str(args))
     if args.pe == args.se:
         logger.error("Exactly one of --pe or --se must be set.")
         sys.exit(1)
@@ -175,6 +177,9 @@ def main(args: FilterCHArgs = None):
 
     outfn = outdir / bam.name.replace('.bam', '.noCH.bam')
     remove_ch_methylation(bam, outfn, verbose=(not args.quiet), paired_end=args.pe)
+
+    outfn = outdir / (str(bam.name)[:-4]+'.noCH.bam')
+
 
     if log_id is not None:
         logger.remove(log_id)
