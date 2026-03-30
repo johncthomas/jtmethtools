@@ -126,7 +126,7 @@ class FilterCHArgs:
             help="Whether the input BAM files are single-end. Either --pe or --se must be set."
         )
     )
-    need_CpH: bool = field( #todo test
+    need_CpH: bool = field(
         default=False,
         metadata=dict(
             required=False,
