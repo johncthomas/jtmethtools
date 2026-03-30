@@ -142,6 +142,96 @@ class FilterCHArgs:
         )
     )
 
+def ttest_filter_bam():
+    import os
+    samstr = """@HD	VN:1.0	SO:none
+@SQ	SN:1	LN:248956422
+mapq20Unorder	18	1	100	20	10M	*	0	10	TTTTTTTTTT	JJJJJJJJJJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:hhhhhhhhhh
+unmethRev	18	1	100	42	10M	*	0	10	TTTTTTTTTT	JJJJJJJJJJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:hhhhhhhhhh
+methRev	18	1	101	32	10M	*	0	10	CCCCCCCCCC	JJJJJJJJJJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:HHHHHHHHHH
+unmethFor	2	1	102	27	10M	*	0	10	TTTTTTTTTT	ABCDEFGHIJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:zzzzzzzzzz
+methFor	2	1	103	22	10M	*	0	10	CCCCCCCCCC	ABCDEFGHIJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:ZZZZZZZZZZ
+allA	2	1	104	17	10M	*	0	10	AAAAAAAAAA	ABCDEFGHIJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:..........
+allC	2	1	105	12	10M	*	0	10	CCCCCCCCCC	ABCDEFGHIJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:..........
+allG	2	1	106	12	10M	*	0	10	GGGGGGGGGG	ABCDEFGHIJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:..........
+allT	2	1	107	12	10M	*	0	10	TTTTTTTTTT	ABCDEFGHIJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:..........
+oneCpG	2	1	107	12	10M	*	0	10	TTCGTTTTTT	ABCDEFGHIJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:..z.......
+twoCpG	2	1	107	12	10M	*	0	10	TTCGCGTTTT	ABCDEFGHIJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:..z.z.....
+mapq19	18	1	100	19	10M	*	0	10	TTTTTTTTTT	JJJJJJJJJJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:hhhhhhhhhh
+mapq20	18	1	100	20	10M	*	0	10	TTTTTTTTTT	JJJJJJJJJJ	NM:i:tag0\tMD:Z:tag1\tXM:Z:hhhhhhhhhh
+oneCHH\t2\t1\t104\t22\t10M\t*\t0\t10\tTTCTTTTTTT\tABCDEFGHIJ\tNM:i:tag0\tMD:Z:tag1\tXM:Z:..H.......
+twoCHH\t2\t1\t104\t22\t10M\t*\t0\t10\tTTCTTCTTTT\tABCDEFGHIJ\tNM:i:tag0\tMD:Z:tag1\tXM:Z:..H..H....
+twoCHH1z\t2\t1\t104\t22\t10M\t*\t0\t10\tTTCTTCTTTC\tABCDEFGHIJ\tNM:i:tag0\tMD:Z:tag1\tXM:Z:..H..H...z
+"""
+
+
+    tmp_dir = Path.home() / 'tmp/test_filter_mCH_oqifjw'
+
+    # delete tmp_dir to avoid stale data
+    if tmp_dir.exists():
+        for f in (tmp_dir/'log').glob('*'):
+            f.unlink()
+        (tmp_dir/'log').rmdir()
+        for f in tmp_dir.glob("*"):
+            f.unlink()
+        tmp_dir.rmdir()
+
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+
+    samfn = tmp_dir/ 'test_mdat_sam_vcoqhiwc.sam'
+
+    with open(samfn, 'w') as f:
+        f.write(samstr)
+
+
+    print(str(samfn))
+    args1 = parse(
+        FilterCHArgs,
+        [
+            "-o", str(tmp_dir),
+            "-b", str(samfn),
+            "--se",
+            # "--need-CH",
+        ]
+    )
+    print('slkdihf', args1)
+    main(args1)
+
+    has_mCH = {'methRev', 'oneCHH', 'twoCHH', 'twoCHH1z'}
+    no_mCH = {'unmethRev', 'unmethFor', 'allA', 'allC', 'allG', 'allT', 'oneCpG', 'twoCpG'}
+    no_CH = {'allA', 'allC', 'allG', 'allT',  'oneCpG', 'twoCpG'}
+
+    found = set()
+    print(os.listdir(tmp_dir))
+    with pysam.AlignmentFile(str(tmp_dir/"test_mdat_sam_vcoqhiwc.noCH.bam"), ) as b:
+        for aln in b:
+            if aln.query_name in has_mCH:
+                raise AssertionError(f"Alignment {aln.query_name} should have been removed for having CH methylation.")
+            found.add(aln.query_name)
+        assert no_mCH.issubset(found), f"{found=}, {no_mCH=}"
+
+    # test with --need-CH
+    args2 = parse(
+        FilterCHArgs,
+        [
+            "-o", str(tmp_dir),
+            "-b", str(samfn),
+            "--se",
+            "--need-CH",
+        ]
+    )
+    main(args2)
+    found = set()
+    with pysam.AlignmentFile(str(tmp_dir/"test_mdat_sam_vcoqhiwc.noCH.bam"), ) as b:
+        for aln in b:
+            if aln.query_name in has_mCH:
+                raise AssertionError(f"Alignment {aln.query_name} should have been removed for having CH methylation.")
+            if aln.query_name in no_CH:
+                raise AssertionError(f"Alignment {aln.query_name} should have been removed for having no CH sites.")
+            found.add(aln.query_name)
+        exp = {'mapq19', 'mapq20', 'mapq20Unorder', 'unmethRev'}
+        assert exp == found, f"{found=}, {exp=}"
+
 
 def main(args: FilterCHArgs = None):
     """Call remove_ch_methylation on BAM file, using given command-line args."""
@@ -187,4 +277,8 @@ def main(args: FilterCHArgs = None):
 
 
 if __name__ == '__main__':
-    main()
+    if len(sys.argv) > 1 and sys.argv[1] == 'test':
+        print('Running tests...')
+        ttest_filter_bam()
+    else:
+        main()
