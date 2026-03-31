@@ -305,18 +305,6 @@ class Genome:
     def __getitem__(self, key):
         return self.sequences[key]
 
-    @cached_property
-    def cpg_index(self) -> CpGIndex:
-        raise NotImplementedError("Depreciated. Use get_cpg_index() instead.")
-        # import warnings
-        # # give depreciation warning
-        # with warnings.catch_warnings():
-        #     warnings.simplefilter("once", DeprecationWarning)
-        #     warnings.warn("Accessing cpg_index as a property is deprecated. Use get_cpg_index() instead. "
-        #                   "(An @cached_property is incompatible with a frozen dataclass - "
-        #                   "it recalculates every time its accessed)", DeprecationWarning)
-        # idx = CpGIndex.from_genome(self)
-        # return idx
 
     def get_cpg_index(self, one_indexed=False) -> CpGIndex:
         """Get the CpG index for this genome."""
