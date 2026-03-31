@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from attrs import define
 from jtmethtools.util import (
-    load_region_bed, split_table_by_chrm,
+    read_region_bed, split_table_by_chrm,
     fasta_to_dict, CANNONICAL_CHRM
 )
 import pickle
@@ -92,7 +92,7 @@ class Regions:
 
     @classmethod
     def from_bed(cls, filename: Pathy) -> Self:
-        df = load_region_bed(filename)
+        df = read_region_bed(filename)
         return cls.from_df(df)
 
     @classmethod

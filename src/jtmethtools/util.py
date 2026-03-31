@@ -75,7 +75,9 @@ def fasta_to_dict(fn: str|Path, full_desc=False) -> dict[str, str]:
     return genome
 
 
-def load_bismark_calls_table(fn) -> pd.DataFrame:
+def read_bismark_calls_table(fn) -> pd.DataFrame:
+    """Load a Bismark methylation calls file into a DataFrame with columns
+    ReadName, Methylated, Chromosome, Locus, Call."""
     df = pd.read_csv(fn, sep='\t', header=None, dtype={2: str})
     df.columns = ['ReadName', 'Methylated', 'Chromosome', 'Locus', 'Call']
     return df
@@ -99,7 +101,7 @@ def split_table_by_chrm(table:pd.DataFrame, chrm_col='Chrm') \
     return chrm_table
 
 
-def load_region_bed(fn) -> pd.DataFrame:
+def read_region_bed(fn) -> pd.DataFrame:
     """Load a BED file with regions.
 
     Return a DataFrame indexed by region name. If present (and made
