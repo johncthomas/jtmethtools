@@ -1,3 +1,5 @@
+"""Classes for working with genomic sequences, regions and CpG sites. Available in the package main namespace."""
+
 import typing
 from functools import cached_property, lru_cache
 from pathlib import Path
@@ -18,11 +20,14 @@ import re
 
 type Pathy = str|Path
 
+
+
 __all__ = ['Regions', 'CpGIndex', 'Genome',  'LociRange']
 
 
 @define(slots=True)
 class LociRange:
+    """A single genomic region, with start, end, chromosome and optional name."""
     start:int
     end:int
     chrm:str
@@ -39,15 +44,21 @@ class LociRange:
 
 @define
 class Regions:
-    """Region starts, ends and names stored in vectors
-    as attributes of the same names.
+    """Region starts, ends and names stored in vectors.
 
-    Create using Regions.from_file or .from_df
+    Primarily passed to filter functions of other classes.
+
+    Is indifferent about chromosome names containing "chr" or not.
     """
     starts: dict[str, NDArray[int]]
+    """(chrm -> vector of region starts)"""
     ends: dict[str, NDArray[int]]
+    """(chrm -> vector of region ends)"""
     names: dict[str, NDArray[str]]
+    """(chrm -> vector of region names)"""
     df: pd.DataFrame = None
+    """Above in the form of a dataframe. For reference only, changes to the dataframe will not be reflected 
+    in the starts/ends/names dicts."""
 
     def __attrs_post_init__(self):
         # make it insensitive to presence/absence of 'chr' in chromosome names
@@ -92,6 +103,8 @@ class Regions:
 
     @classmethod
     def from_bed(cls, filename: Pathy) -> Self:
+        """Will attempt to use any 4th column as region names. Absent or non-unique 4th column
+        will result in names in format "Chrm:Start-End"."""
         df = read_region_bed(filename)
         return cls.from_df(df)
 
@@ -148,7 +161,7 @@ class CpGIndex:
     """
     # NOTE: all constructors should call from_cpg_list.
 
-    # note to copilot: there are two positions in each CpG, the second 1 base after the first.
+    # note to copilot: there are two positions in each CpG, the second +1 base after the first.
     # This is always true whether the 2 given positions are 1-indexed or not.
 
     cpg_list: tuple[tuple[str, int], ...]
@@ -255,14 +268,16 @@ class CpGIndex:
 
 @define(frozen=True)
 class Genome:
-    """Class for holding and working with dictionary of sequences."""
+    """Class for holding and working with dictionary of sequences.
+
+    Genome[chrm] also returns the sequence for that chromosome."""
     sequences: MappingProxyType[str, str]
     filename: str | Path = None
 
     def harmonise_chrm_names(self) -> Self:
-        """add chr to chromosome names that don't have it, and remove it from them that do.
+        """add "chr" to chromosome names that don't have it, and remove it from them that do.
 
-        Creates a new instance of Genome as it's supposed to be immutable."""
+        Creates a new instance of Genome as Genome is immutable."""
         new_seqs = {k: v for k, v in self.sequences.items()}
         for k in self.sequences.keys():
             if k.startswith('chr'):
@@ -312,6 +327,7 @@ class Genome:
 
     @property
     def chromsomes(self) -> list[str]:
+        """List of chromosome names in the genome."""
         return list(self.sequences.keys())
 
     def __repr__(self):
@@ -335,7 +351,9 @@ def ttest_genome_cpg_index():
     test_cindex = CpGIndex.from_genome(testgen)
     #print(test_cindex.cpg_list)
     assert test_cindex.cpg_list == (('a', 3), ('a', 5), ('a', 9))
-    assert test_cindex.locus2index == MappingProxyType({('a', 3): 0, ('a', 5): 1, ('a', 9): 2})
+    assert test_cindex.locus2index == MappingProxyType({('a', 3): 0, ('a', 4): 0, ('a', 5): 1, ('a', 6): 1, ('a', 9): 2, ('a', 10): 2}), (
+        str({k:test_cindex.locus2index[k] for k in sorted(test_cindex.locus2index.keys())})
+    )
 
 
     regions_df = pd.DataFrame({
