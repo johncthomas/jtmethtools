@@ -1,3 +1,5 @@
+"""Class and functions for working with Bismark BAM."""
+
 import dataclasses
 from typing import Collection, Tuple, Literal, Iterable
 
@@ -10,10 +12,7 @@ from attrs import define
 from functools import cached_property
 
 from jtmethtools.classes import Regions
-import sys
 
-logger.remove()
-logger.add(sys.stderr, level='WARNING', colorize=True)
 SplitTable = dict[str, pd.DataFrame]
 
 from pathlib import Path
@@ -30,14 +29,16 @@ __all__ = [
     'write_bam_from_pysam',
     'alignment_overlaps_region',
     'flag_to_text',
-    'LocusValues',
 ]
 
 
 def alignment_overlaps_region(
         alignment: AlignedSegment,
         regions: Regions) -> bool | str:
-    """Check if an alignment overlaps a region."""
+    """Check if an alignment overlaps a region. Returns False if not,
+    and the name of the first overlapping region if it does.
+
+    samtools is much faster if you just want to filter a large BAM."""
     ref = alignment.reference_name
 
     try:
@@ -61,6 +62,7 @@ def alignment_overlaps_region(
 
 
 def get_bismark_met_str(a: AlignedSegment) -> str|None:
+    """Return the methylation string for a Bismark alignment, or None if it can't be found."""
     # this works in every case I've seen...
     tags = a.get_tags()
     tag = None
@@ -87,7 +89,8 @@ def write_bam_from_pysam(
         header_file:str=None,
         header:AlignmentHeader=None,
 ):
-    """Write a bam file of alignments. Supply a SAM/BAM file name to
+    """Convenience function for writing pysam.AlignedSegments.
+    Supply a SAM/BAM file name to
     use for the header, or supply the header directly. Either
     `header_file` or `header`, not both.
 
@@ -145,15 +148,15 @@ def flag_to_text(flag):
     return ", ".join(result) if result else "None"
 
 
-def get_alignment_of_read(readname:str, bamfn:str) -> (AlignedSegment, AlignedSegment):
-    import pysam
-    with pysam.AlignmentFile(bamfn) as bam:
-
-        aligns = []
-        for a in bam:
-            if a.qname == readname:
-                aligns.append(a)
-        return tuple(aligns)
+# def get_alignment_of_read(readname:str, bamfn:str) -> (AlignedSegment, AlignedSegment):
+#     import pysam
+#     with pysam.AlignmentFile(bamfn) as bam:
+#
+#         aligns = []
+#         for a in bam:
+#             if a.qname == readname:
+#                 aligns.append(a)
+#         return tuple(aligns)
 
 
 # @lru_cache(1024)
@@ -204,19 +207,40 @@ def count_alignment_error(max_errors:int|None=1000):
 
 @define
 class LocusValues:
+    """Locus keyed values for an alignment.
+
+    Attributes:
+        methylations: dict mapping reference locus to methylation state (e.g. 'Z', 'z', 'X', etc.).
+        qualities: dict mapping reference locus to PHRED quality score.
+        nucleotides: dict mapping reference locus to nucleotide in the read.
+    """
     methylations:dict[int, str]
     qualities:dict[int, int]
     nucleotides:dict[int, str]
     is_good:bool = True
 
+
 @define(frozen=True)
 class Alignment:
+    """Wraps one or two pysam AlignedSegments, with methods for getting the
+    methylation state at each reference locus.
+
+    Merges overlapping paired alignments, using the mate with the highest quality score by default.
+
+    In general, insertions and deletions are ignored.
+    """
     a: AlignedSegment
+    """AlignedSegment for read 1 (or the only read if single-ended)."""
     a2: AlignedSegment | None = None
+    """AlignedSegment for read 2, or None if single-ended."""
     kind: Literal['bismark'] = 'bismark'
     filename: str = ''
     phred_offset: int = -33
+    prefer_R1: bool = False
+    """If True, locus_* properties will use read 1 for shared loci in paired alignments."""
     use_quality_profile:bool = False
+    """ If True, locus_* properties will infer a PHRED score using both reads where they overlap.
+            Based on Gaspar (2018)  https://doi.org/10.1186/s12859-018-2579-2. Overrides prefer_R1."""
 
     def _get_met_str(self, a:AlignedSegment):
         if self.kind == 'bismark':
@@ -225,7 +249,8 @@ class Alignment:
             raise NotImplementedError("Only bismark alignments are currently supported.")
 
 
-    def has_metstr(self):
+    def _has_metstr(self):
+        """Checks both alignments for valid methylation strings"""
         if get_bismark_met_str(self.a) is None:
             return False
         if self.a2 is not None:
@@ -247,22 +272,31 @@ class Alignment:
         overlap_length = a1.reference_end - a2.reference_start
         return a1, a2, overlap_length
 
+    @property
+    def locus_methylation(self) -> dict[int, str]:
+        """A dict mapping reference locus to methylation state (e.g. 'Z', 'z', 'X', etc.)."""
+        return self._locus_values.methylations
+
+    @property
+    def locus_quality(self) -> dict[int, int]:
+        """A dict mapping reference locus to PHRED quality score."""
+        return self._locus_values.qualities
+
+    @property
+    def locus_nucleotide(self) -> dict[int, str]:
+        """"A dict mapping reference locus to nucleotide in the read."""
+        return self._locus_values.nucleotides
+
 
     @cached_property
-    def locus_values(self, ) \
+    def _locus_values(self, ) \
             -> LocusValues:
         """Get object with attributes "qualities", "nucleotides", and "methylations"
         mapping each reference locus to the value, reference_locus -> value.
-
-        Insertions and deletions are ignored.
-
-        If Alignment.use_quality_profile is True (and the reads are paired),
-        it'll recalculate the PHRED scores using table from NGmerge:
-            https://github.com/harvardinformatics/NGmerge
         """
 
         empty_return =  LocusValues({}, {}, {}, is_good=False)
-        if not self.has_metstr():
+        if not self._has_metstr():
             logger.warning(
                 f"Can't determine metstr for alignment of {self.a.query_name}, skipping."
             )
@@ -335,40 +369,53 @@ class Alignment:
                 print('BAM = ', self.filename, ' | Read = ', self.a.query_name)
                 raise
 
-            for l in shared_loc:
-                a1_pos = a1_loc_pos[l]
-                a2_pos = a2_loc_pos[l]
+            if (not self.prefer_R1) or self.use_quality_profile:
+                for l in shared_loc:
+                    a1_pos = a1_loc_pos[l]
+                    a2_pos = a2_loc_pos[l]
 
-                a1_nt = self.a.query_sequence[a1_pos]
-                a2_nt = self.a2.query_sequence[a2_pos]
+                    a1_nt = self.a.query_sequence[a1_pos]
+                    a2_nt = self.a2.query_sequence[a2_pos]
 
-                a1_phred = self.a.query_qualities[a1_pos]
-                a2_phred = self.a2.query_qualities[a2_pos]
+                    a1_phred = self.a.query_qualities[a1_pos]
+                    a2_phred = self.a2.query_qualities[a2_pos]
 
-                a1_met = a1_metstr[a1_pos]
-                a2_met = a2_metstr[a2_pos]
+                    a1_met = a1_metstr[a1_pos]
+                    a2_met = a2_metstr[a2_pos]
 
-                # Keep the nucleotide with the highest quality
-                # (in the case that a1 and a2 have different nucleotides and
-                #   the phred is the same, we'll keep the a1 NT)
-                if a1_phred >= a2_phred:
-                    nt = a1_nt
-                    met = a1_met
-                else:
-                    nt = a2_nt
-                    met = a2_met
-
-                if self.use_quality_profile:
-                    if a1_nt == a2_nt:
-                        phred = quality_profile_match_41[a1_phred][a2_phred]
+                    # Keep the nucleotide with the highest quality
+                    # (in the case that a1 and a2 have different nucleotides and
+                    #   the phred is the same, we'll keep the a1 NT)
+                    if a1_phred >= a2_phred:
+                        nt = a1_nt
+                        met = a1_met
                     else:
-                        phred = quality_profile_mismatch_41[a1_phred][a2_phred]
-                else:
-                    phred = max((a1_phred, a2_phred))
+                        nt = a2_nt
+                        met = a2_met
 
-                phreds[l] = phred
-                nucleotides[l] = nt
-                methylations[l] = met
+                    if self.use_quality_profile:
+                        if a1_nt == a2_nt:
+                            phred = quality_profile_match_41[a1_phred][a2_phred]
+                        else:
+                            phred = quality_profile_mismatch_41[a1_phred][a2_phred]
+                    else:
+                        phred = max((a1_phred, a2_phred))
+
+                    phreds[l] = phred
+                    nucleotides[l] = nt
+                    methylations[l] = met
+            else:
+                # use R1
+                for l in shared_loc:
+                    a1, loc_pos, metstr = (
+                        (self.a, a1_loc_pos, a1_metstr)
+                        if self.a.is_read1
+                        else (self.a2, a2_loc_pos, a2_metstr)
+                    )
+                    a1_pos = loc_pos[l]
+                    phreds[l] = a1.query_qualities[a1_pos]
+                    nucleotides[l] = a1.query_sequence[a1_pos]
+                    methylations[l] = a1_metstr[a1_pos]
 
         sorted_phreds, sorted_nucleotides, sorted_methylations = (
             dict(sorted(d.items()))
@@ -377,42 +424,29 @@ class Alignment:
 
         return LocusValues(qualities=sorted_phreds, nucleotides=sorted_nucleotides, methylations=sorted_methylations)
 
-    # def merge(self) -> Self:
-    #     if self.a2 is None:
-    #         return self
-    #
-
-    @property
-    def locus_methylation(self) -> dict[int, str]:
-        return self.locus_values.methylations
 
     @property
     def metstr(self) -> str:
+        """String of methylation states using the Bismark convention, ordered by reference position."""
         return ''.join(self.locus_methylation.values())
 
-    @property
-    def locus_quality(self) -> dict[int, int]:
-        return self.locus_values.qualities
-
-    @property
-    def locus_nucleotide(self) -> dict[int, str]:
-        return self.locus_values.nucleotides
-
-
-    @property
-    def alignments(self) -> Tuple[AlignedSegment]:
-        if self.a2 is None:
-            alignments = (self.a,)
-        else:
-            alignments = (self.a, self.a2)
-        return alignments
+    # @property
+    # def alignments(self) -> Tuple[AlignedSegment]:
+    #     if self.a2 is None:
+    #         alignments = (self.a,)
+    #     else:
+    #         alignments = (self.a, self.a2)
+    #     return alignments
 
     @property
     def reference_name(self) -> str:
+        """Reference name (chromosome) of the alignment."""
         return self.a.reference_name
 
     @property
     def reference_start(self):
+        """Start position of the alignment on the reference genome. If paired, returns
+        the minimum start position of the two alignments."""
         if self.a2 is None:
             return self.a.reference_start
         else:
@@ -420,12 +454,15 @@ class Alignment:
 
     @property
     def reference_end(self):
+        """End position of the alignment on the reference genome. If paired, returns
+        the maximum end position of the two alignments."""
         if self.a2 is None:
             return self.a.reference_end
         else:
             return max(self.a.reference_end, self.a2.reference_end)
 
     def mapping_quality(self):
+        """Mapping quality of the alignment."""
         return self.a.mapping_quality
 
     # def _iter_locus_metstr_bismark(self, a: AlignedSegment) -> Tuple[int, bool]:
@@ -443,10 +480,10 @@ class Alignment:
     #             locus += 1
     #             yield locus, m == 'Z'
 
-    def no_non_cpg(self) -> bool:
+    def _no_non_cpg(self) -> bool:
         """look for forbidden methylation states.
 
-        Return True no H|X|U."""
+        Return True if there's no H|X|U."""
         values = set(self.metstr)
         if (
                 ('H' in values)
@@ -458,9 +495,12 @@ class Alignment:
 
     def has_methylated_ch(self) -> bool:
         """Return True if there is any methylated non-CpG in the alignment."""
-        return not self.no_non_cpg()
+        return not self._no_non_cpg()
 
     def get_hit_regions(self, regions: Regions) -> list[str]:
+        """Get the names of the regions that this alignment overlaps.
+
+        Returns an empty list if it doesn't overlap any region."""
         regions = [alignment_overlaps_region(a, regions)
                    for a in self.alignments]
         regions = list(set([r for r in regions if r]))
@@ -542,32 +582,17 @@ def _iter_bam_se(
 def iter_bam_segments(
         bam: str | Path | AlignmentFile,
         paired_end: bool = True,
-        check_pairedness: bool = False,
 ) -> Iterable[Tuple[AlignedSegment, AlignedSegment|None]]:
     """Iterate over a bam file, yielding pairs of alignments, or
     (segment, None) when it's unpaired.
 
-    Supports SAM and BAM files automatically.
+    Supports SAM and BAM files.
     """
     #if check_pairedness, raises exception if bam is actually single-ended"""
 
     bam = _load_bam(bam)
     sorting_method = bam.header.get('HD', {}).get('SO', 'Unknown')
     logger.info(f'{sorting_method=}')
-    # if check_pairedness and paired_end:
-    #
-    #     any_paired = False
-    #     for i, a in enumerate(_iter_bam_se(bam)):
-    #         if a[0].is_paired:
-    #             any_paired = True
-    #             break
-    #         if i > 1000:
-    #             break
-    #     if not any_paired:
-    #         logger.warning(f"BAM file ({bamfn}) is not paired-end, but paired_end=True was set. "
-    #                        "Running as single-ended.")
-    #         paired_end = False
-
 
     if paired_end:
         if (sorting_method == 'queryname'):
@@ -577,9 +602,9 @@ def iter_bam_segments(
         else:
             raise RuntimeError(
                 "Paired end BAM not sorted by queryname or coordinate. "
-                "Sort it, or use the --single-ended option.\n"
+                "Sort it (with -n preferably, but by coordinate is fine), "
+                "or use the --single-ended option.\n"
             )
-
     else:
         bamiter = _iter_bam_se(bam, )
     for aln in bamiter:
@@ -591,11 +616,10 @@ def iter_bam(
         bam:str|Path|AlignmentFile,
         paired_end:bool=True,
         kind='bismark',
-        check_pairedness: bool = False,
 ) -> Iterable[Alignment]:
     """Iterate over a bam file, yielding Alignments."""
 
-    for aln in iter_bam_segments(bam, paired_end, check_pairedness=check_pairedness):
+    for aln in iter_bam_segments(bam, paired_end,):
         yield Alignment(*aln, kind=kind)
     return None
 
