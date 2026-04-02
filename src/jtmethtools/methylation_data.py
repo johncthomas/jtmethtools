@@ -31,7 +31,7 @@ from jtmethtools.classes import *
 
 from jtmethtools.util import (
     logger,
-    CANNONICAL_CHRM
+    CANNONICAL_CHRM, table2df
 )
 
 from jtmethtools.alignments import iter_bam_segments
