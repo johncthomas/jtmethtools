@@ -5,22 +5,25 @@ import tarfile
 
 import tempfile
 
+
 import pyarrow as pa
 import pandas as pd
 import numpy as np
 from numpy.typing import NDArray
 
-from typing import Tuple
+from typing import Tuple, Mapping
 from datetime import datetime
 import json
 from loguru import logger
+
+
 logger.remove()
 
 from attrs import define
 
 __all__ = ["CANNONICAL_CHRM", "setup_logfile", "fasta_to_dict", "read_bismark_calls_table",
            "split_table_by_chrm", "read_region_bed", "read_cov", "write_cov", "filter_cov",
-           "write_array", "read_array", "read_bed", ]
+           "write_array", "read_array", "read_bed", "table2df", "read_parquet", "log_memory_footprint"]
 
 def set_logger(min_level='DEBUG'):
 
@@ -36,10 +39,11 @@ type SplitTable = dict[str, pd.DataFrame]
 CANNONICAL_CHRM = [str(i) for i in range(1, 23)] + ['X', 'Y', 'MT']
 CANNONICAL_CHRM += ['chr' + c for c in CANNONICAL_CHRM]
 CANNONICAL_CHRM = set(CANNONICAL_CHRM)
+"""Numbered chromosomes, plus X, Y and MT, with and without 'chr' prefix. Used for filtering out non-standard contigs."""
 
 def setup_logfile(log_dir: Path, sample: str) -> int:
     """Set up a log file in with path {log_dir}/{sample}.{timestamp}.log,
-    and add it as a sink to the logger. log_dir should probably end with /log.
+    and add it as a sink to the logger.
 
     Returns the log ID of the added sink, which can be used to remove it later if needed."""
     now = datetime.now().strftime("%Y%m%d_%H-%M-%S")
@@ -134,18 +138,73 @@ def read_region_bed(fn) -> pd.DataFrame:
     return regions
 
 
-read_region_bed = load_region_bed
+def read_cov(fn, locus2index:Mapping[tuple[str, int], int]=None):
+    """Load a Bismark coverage file into a DataFrame with columns Chrm, Position,
+    Perc, M, U, Depth, Beta.
 
-def read_cov(fn: str|Path) -> pd.DataFrame:
-    """Read a Bismark coverage file into a DataFrame."""
-    df = pd.read_csv(
-        fn, sep='\t', header=None,
-        dtype={0: str, 1:int, 2:int, 3:float, 4:int, 5:int}
-    )
+    If locus2index maps (chrm, position) -> CpG number. If provided, will sum
+    strands together and return a DF indexed by CpG index. Otherwise, returns
+    the cov file as a DF indexed by (chrm, start).
 
-    df.columns = ['Chrm', 'Locus', 'PointlessColumn', 'Percent', 'Methylated', 'Unmethylated', ]
-    df.drop("PointlessColumn", inplace=True, axis=1)
+    Remember Bismark are 1 indexed.
+    """
+    df = pd.read_csv(fn, sep='\t', header=None, dtype={0:str})
+    df.columns = ['Chrm', 'Position', 'End', 'Perc', 'M', 'U']
+    df.drop('End', axis=1, inplace=True)
+    df.loc[:, 'Depth'] = df.M + df.U
+    df.loc[:, 'Beta'] = df.M / df.Depth
+    df.set_index(['Chrm', 'Position'], drop=False, inplace=True)
+    # Change the names to avoid annoying "ambiguous column name" errors
+    df.index.names = ['ChrmIdx', 'StartIdx']
+    if locus2index is not None:
+        df = sum_strands(df, locus2index)
     return df
+
+
+def sum_strands(cov: pd.DataFrame, locus2index: dict[tuple[str, int], int]):
+    """Sum counts for both positions in a CpG.
+
+    Args:
+        cov: DataFrame indexed by (chrm, position) with columns M & U.
+        locus2index: Dictionary mapping (chrm, position) to CpG indicies used to sum
+    the sites together.
+
+    If the number of sites found is low, remember that bismark cov is 1-indexed."""
+    cov = cov.copy()
+    idx = cov.index.map(lambda x: locus2index.get(x, -1))
+    cov.loc[:, 'CpGIndex'] = idx.values
+    cov = cov.loc[idx != -1]
+    cov = cov.groupby('CpGIndex')[['M', 'U']].sum()
+    cov.loc[:, 'Depth'] = cov.M + cov.U
+    cov.loc[:, 'Beta'] = cov.M / cov.Depth
+    return cov
+
+
+def write_cov(df, fn):
+    """Write a cov table from DF with columns Chrm, Position, Perc, M, U.
+
+    Drops other columns if they are present."""
+    req_cols = ['Chrm', 'Position', 'Perc', 'M', 'U']
+    if not all([c in df.columns for c in req_cols]):
+        raise ValueError(
+            f"DataFrame must contain columns {req_cols} write cov file.\n"
+            f"Columns found: {df.columns.tolist()}"
+        )
+
+    # Deliberately writing Position twice, in a cov BED table the Start position is
+    #  always the same as the End position.
+    df \
+        .reindex(columns=['Chrm', 'Position', 'Position', 'Perc', 'M', 'U']) \
+        .to_csv(fn, sep='\t', header=False, index=False)
+
+
+def filter_cov(cov_df, included_sites: pd.Index, min_depth=50) -> pd.DataFrame:
+    """Filter coverage table by loci present in the included_sites, and depth.
+    Set min_depth=None to avoid that filter"""
+    cov_filt = cov_df.reindex(included_sites).dropna()
+    if min_depth is not None:
+        cov_filt = cov_filt.loc[cov_filt.Depth >= min_depth]
+    return cov_filt
 
 
 def write_array(
@@ -485,3 +544,45 @@ def mapping_to_pa_dict(mapping:dict[str, int], values:NDArray, ) -> pa.Dictionar
     indices = pa.array(values, type=pa.int32())
     dict_array = pa.DictionaryArray.from_arrays(indices, dictionary)
     return dict_array
+
+
+def index_of_true(bool_series: pd.Series) -> pd.Index:
+    """Return the index of a boolean series where the value is True."""
+    return bool_series.loc[bool_series].index
+
+
+def read_bed(fn):
+    df:pd.DataFrame = pd.read_csv(fn, sep='\t', header=None, dtype={0:str})
+    df.rename(columns={0:'Chrm', 1:'Position', 2:'End'}, inplace=True)
+    return df
+
+
+def table2df(table: pa.Table) -> pd.DataFrame:
+    """Convert a pyarrow Table to a pandas DataFrame, converting dictionary types to pandas categorical types."""
+    mapping = {schema.type: pd.ArrowDtype(schema.type) for schema in table.schema}
+
+    return table.to_pandas(types_mapper=mapping.get, ignore_metadata=True)
+
+
+def read_parquet(fn) -> pd.DataFrame:
+    """load a parquet file and convert to a pandas dataframe.
+    Works when pd.read_parquet fails on the dictionary types."""
+    tls = pa.parquet.read_table(fn)
+    tls = table2df(tls)
+    return tls
+
+
+def log_memory_footprint():
+    import psutil
+    import os
+
+    # Get the current process
+    process = psutil.Process(os.getpid())
+
+    # Get memory usage in bytes
+    memory_usage = process.memory_info().rss  # in bytes
+
+    # Convert to megabytes (MB) for easier readability
+    memory_usage_mb = memory_usage / (1024 ** 2)
+
+    logger.info(f"Memory usage: {memory_usage_mb:.2f} MB")
