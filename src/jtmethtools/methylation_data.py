@@ -1,10 +1,7 @@
-import collections
 import copy
 import json
 
 import sys
-from os import PathLike
-import os
 from pathlib import Path
 from typing import (
     Self,
@@ -31,26 +28,12 @@ from jtmethtools.classes import *
 
 from jtmethtools.util import (
     logger,
-    CANNONICAL_CHRM, table2df
+    CANNONICAL_CHRM, table2df, read_parquet, log_memory_footprint
 )
 
 from jtmethtools.alignments import iter_bam_segments
 
 logger.remove()
-
-def table2df(table: pa.Table) -> pd.DataFrame:
-    """Convert a pyarrow Table to a pandas DataFrame, converting dictionary types to pandas categorical types."""
-    mapping = {schema.type: pd.ArrowDtype(schema.type) for schema in table.schema}
-
-    return table.to_pandas(types_mapper=mapping.get, ignore_metadata=True)
-
-
-def read_parquet(fn) -> pd.DataFrame:
-    """load a parquet file and convert to a pandas dataframe.
-    Works when pd.read_parquet fails on the dictionary types."""
-    tls = pa.parquet.read_table(fn)
-    tls = table2df(tls)
-    return tls
 
 
 def _load_methylation_data_reliable(datdir):
@@ -63,22 +46,6 @@ def _load_methylation_data_reliable(datdir):
         metadat = json.load(f)
 
     return locdat, readdat, metadat
-
-
-def log_memory_footprint():
-    import psutil
-    import os
-
-    # Get the current process
-    process = psutil.Process(os.getpid())
-
-    # Get memory usage in bytes
-    memory_usage = process.memory_info().rss  # in bytes
-
-    # Convert to megabytes (MB) for easier readability
-    memory_usage_mb = memory_usage / (1024 ** 2)
-
-    logger.info(f"Memory usage: {memory_usage_mb:.2f} MB")
 
 
 class MethylationDataset:
