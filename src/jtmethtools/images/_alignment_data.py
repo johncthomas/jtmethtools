@@ -1,5 +1,6 @@
 # implimentation is way more complicated than it could be here cus
 #   pyarrow hadn't been integrated into pandas when I wrote this.
+# methylation_data.py is generally used now, but this is still used for the image generation.
 import collections
 import json
 import pathlib
@@ -86,6 +87,7 @@ class Column:
 # column types used for keeping equivilent array dtypes together
 #  in the code.
 POS_NP_DTYPE = np.uint32
+
 @define
 class PositionCol(Column):
     name:str
@@ -710,7 +712,7 @@ def process_bam(
             read_arrays['read_name'][read_i] = aln.a.query_name
 
         # per locus data
-        locus_data = aln.locus_values
+        locus_data = aln._locus_values
         encoded_nt = encode_nt_str(locus_data.nucleotides.values(), )
         loci_arrays['nucleotide'][position_i:position_j] = encoded_nt
         loci_arrays['phred_scores'][position_i:position_j] = np.array(

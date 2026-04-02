@@ -1,20 +1,31 @@
 import os
 
 from pathlib import Path
-from typing import Self, Collection, Tuple, Iterator
+from typing import Collection, Tuple
 
 import numpy as np
 import pyarrow as pa
 from attrs import define
-from jtmethtools.alignment_data import (
-    TruePA, COLS_READ, PositionArray, Pathesque, AlignmentsData, \
-    PAD_READID, NT_CODES, BISMARK_CODES, sampledown_rows, process_bam)
+from jtmethtools.images._alignment_data import AlignmentsData, process_bam, Pathesque, PAD_READID
 from jtmethtools.alignments import Regions
 from jtmethtools.classes import LociRange
 from jtmethtools.util import write_array, read_array
 from loguru import logger
 from numpy.typing import NDArray
 from pyarrow import compute as compute
+
+# pyarrow bools aren't recognised as bools by python, they
+# are Truthy, even when `false`. So using x == TruePA
+TruePA = pa.scalar(True, type=pa.bool_())
+FalsePA = pa.scalar(False, type=pa.bool_())
+
+_ntcodes = dict(zip('ACGTN?', np.array([1, 2, 3, 4, 5, 0], dtype=np.uint8)))
+NT_CODES = _ntcodes | {v:k for k, v in _ntcodes.items()}
+
+_bsmk_codes = '?.ZHXUzhxu'
+_bsmk_code_dict = dict(zip(_bsmk_codes, range(len(_bsmk_codes))))
+BISMARK_CODES = _bsmk_code_dict | {v:k for k, v in _bsmk_code_dict.items()}
+
 
 PIXEL_DTYPE = np.float32
 
@@ -448,9 +459,6 @@ def ttests(test_bam_fn, test_regions_fn, testoutdir,
         print(l.name, mdat)
     next5 = datetime.datetime.now()
     print('Time to generate all images: ', next5 - next4)
-
-
-
 
 
 

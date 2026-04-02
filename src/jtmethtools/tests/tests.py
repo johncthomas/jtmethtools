@@ -3,16 +3,11 @@ from pathlib import Path
 import jtmethtools.images
 import matplotlib.pyplot as plt
 import numpy as np
-import os
-from dataclasses import dataclass
-from typing import Tuple
-from pyarrow import compute
 
 from jtmethtools.util import (
     read_array,
     write_array,
     logger,
-    set_logger,
     MockAlignment
 )
 
@@ -138,7 +133,7 @@ def test_read_write_array():
 def test_save_images():
     start, end = 90, 110
     window = read_data.window(start=start, end=end, chrm='1')
-    img = jtmethtools.images.ImageMaker(window, start, end, rows=20)
+    img = jtmethtools.images.images.ImageMaker(window, start, end, rows=20)
 
     from jtmethtools.images import (
         generate_images_in_regions,

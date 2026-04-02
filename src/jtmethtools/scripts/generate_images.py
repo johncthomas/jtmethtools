@@ -101,7 +101,7 @@ def parse_args():
 def parse_args_and_run():
     args = parse_args()
     # import after parsing args so it quickly runs and exits without proper args.
-    from jtmethtools.generate_images import main
+    from jtmethtools.images.generate_images import main
     main(args)
 
 if __name__ == '__main__':

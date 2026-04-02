@@ -1,5 +1,5 @@
 
-from jtmethtools.images import *
+from jtmethtools.images.images import *
 import argparse
 import datetime
 import importlib.metadata
@@ -22,12 +22,12 @@ def run_image_gen__one_per_layer(
     )
 
     os.makedirs(outdir, exist_ok=True)
-
+    #regions = Regions.from_file(regions)
     start = datetime.datetime.now()
     rd = process_bam(
         bam,
-        regions,
-        single_ended=single_ended
+        regionsfn=regions,
+        single_ended= single_ended
     )
     next1 = datetime.datetime.now()
     logger.info('Time to process BAM:', start - next1)
@@ -117,3 +117,5 @@ def ttest():
         height=50,
         **{'min_cpg': 1, 'max_other_met': 1000, 'min_alignments': 0, 'min_mapq': 40},
     )
+
+ttest()
