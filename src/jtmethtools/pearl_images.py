@@ -3,6 +3,42 @@ import matplotlib as mpl
 import numpy as np
 from copy import copy
 
+"""Plot strings of pearls representing methylation. Interface is currently a little clunky, here's a worked
+example:
+
+```python
+import jtmethtools as jtm
+import matplotlib.pyplot as plt
+
+# create methylation figure
+fig = jtm.pearl_images.MethylationFigure()
+
+# iterate through alignments in a bam file and add them to the figure
+for i, aln in enumerate(jtm.iter_bam(bamfn)):
+    if i > 20:
+        break
+    i*=2
+    
+    # record alignment as True=mCpG, False=unmethylated-CpG, None=Not-a-CpG
+    metlist = []
+    for m in aln.metstr:
+        if m.lower() == 'z':
+            metlist.append(m == 'Z')
+        else:
+            metlist.append(None)
+    
+    # add the circles and the line
+    fig.add_methylation_list(0, i, methylation=metlist)
+
+
+# render the figure
+fig.render(sz_mult=1.5)
+# show the figure
+plt.show()
+```
+"""
+
+
 class MethylationFigure:
     """Plot circles on a line representing methylation
     state of reads"""
@@ -57,6 +93,11 @@ class MethylationFigure:
 
 
     def add_methylation_list(self, x, y, methylation: list[bool | None]):
+        """Add string of circles to the image where the vaules True|False|None
+        will be rendered as:
+            True: Dark red circle
+            False: White circle
+            None: Nothing"""
         # update x/y limits
         x_max = x + len(methylation)
         self._update_limits(x, x_max, y)
@@ -67,6 +108,7 @@ class MethylationFigure:
                 continue
             self._add_methylated(x + i, y) if m else self._add_unmethylated(x + i, y)
 
+        self._add_line(x, x_max, y)
 
 
     def render(self, sz_mult=1.):
@@ -98,6 +140,7 @@ class MethylationFigure:
             n_reads=50, n_hyper_reads=12, max_gap=7,
             render=True
     ):
+        """Plot random set of reads"""
         cpg_pos = sorted(
             np.random.choice(list(range(region_width)), size=n_cpg, replace=False)
         )
@@ -107,12 +150,14 @@ class MethylationFigure:
         read_i_hyper = np.random.choice(list(range(n_reads)), size=n_hyper_reads)
 
         biggest_gap = max_gap+1
+        # Regenerate CpG positions until maximum gap constraint satisfied
         while biggest_gap > max_gap:
             cpg_pos = sorted(
                 np.random.choice(list(range(region_width)), size=n_cpg, replace=False)
             )
             biggest_gap = max([cpg_pos[i + 1] - cpg_pos[i] for i in range(n_cpg - 1)])
 
+        # Generate synthetic methylation reads across random starts
         for read_i in range(n_reads):
 
             is_hyper = (read_i in read_i_hyper)
@@ -120,6 +165,7 @@ class MethylationFigure:
 
             read_start = np.random.choice(list(range(0, region_width - read_width)))
             read = []
+            # Builds methylation read by sampling per-locus probabilities
             for locus in range(read_start, read_width + read_start):
                 if locus in cpg_pos:
                     cpg_i = cpg_pos.index(locus)
