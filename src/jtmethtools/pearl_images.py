@@ -69,6 +69,7 @@ class MethylationFigure:
             self._add_methylated(x + i, y) if m else self._add_unmethylated(x + i, y)
 
 
+
     def render(self, sz_mult=1.):
         """Render the figure with the added patches."""
 
