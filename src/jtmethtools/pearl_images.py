@@ -65,7 +65,6 @@ class MethylationFigure:
         for i, m in enumerate(methylation):
             if m is None:
                 continue
-            self.add_methylated(x + i, y) if m else self.add_unmethylated(x + i, y)
             self._add_methylated(x + i, y) if m else self._add_unmethylated(x + i, y)
 
 
