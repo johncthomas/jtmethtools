@@ -430,13 +430,13 @@ class Alignment:
         """String of methylation states using the Bismark convention, ordered by reference position."""
         return ''.join(self.locus_methylation.values())
 
-    # @property
-    # def alignments(self) -> Tuple[AlignedSegment]:
-    #     if self.a2 is None:
-    #         alignments = (self.a,)
-    #     else:
-    #         alignments = (self.a, self.a2)
-    #     return alignments
+    @property
+    def alignments(self) -> Tuple[AlignedSegment]:
+        if self.a2 is None:
+            alignments = (self.a,)
+        else:
+            alignments = (self.a, self.a2)
+        return alignments
 
     @property
     def reference_name(self) -> str:
