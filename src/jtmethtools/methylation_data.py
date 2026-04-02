@@ -49,6 +49,12 @@ def _load_methylation_data_reliable(datdir):
 
 
 class MethylationDataset:
+    """Locus and read level data with process tracking for data integrity tracking.
+
+    Both `locus_data` and `read_data` have column AlignmentIndex, which links the tables.
+
+    Methods that alter data return a copy by default, use inplace=True to mutate in place.
+    """
     def __init__(
             self,
             locus_data:pd.DataFrame,
@@ -61,13 +67,14 @@ class MethylationDataset:
         self.processes = [p for p in (processes or []) if p is not None]
         self.name = name
 
-    @property
-    def metadata(self) -> list[dict]:
-        logger.warning("DEPRECIATION: metadata is now a list of processes. Use the .processes property to access it.")
-        return self.processes
+    # @property
+    # def metadata(self) -> list[dict]:
+    #     logger.warning("DEPRECIATION: metadata is now a list of processes. Use the .processes property to access it.")
+    #     return self.processes
 
     @classmethod
     def from_dir(cls, datdir:Path|str) -> Self:
+        """Create MethylationDataset from directory of data."""
         datdir = Path(datdir)
         locdat, readdat, processes = load_methylation_data(datdir)
         return cls(
@@ -78,6 +85,9 @@ class MethylationDataset:
         )
 
     def write_to_dir(self, outdir:Path|str, create_outdir=True) -> None:
+        """Write data tables to parquet files, and metadata to a JSON.
+
+        `outdir` will be created if it doesn't exist."""
         outdir = Path(outdir)
         if create_outdir:
             outdir.mkdir(parents=True, exist_ok=True)
@@ -86,27 +96,81 @@ class MethylationDataset:
         with open(outdir/'metadata.json', 'w') as f:
             json.dump(self.processes, f, indent=4)
 
-    def drop_methylated_CH(self) -> Self:
+    def to_dir(self, outdir:Path|str, create_outdir=True) -> None:
+        """Alias for write_to_dir."""
+        self.write_to_dir(outdir, create_outdir)
+
+
+    def get_process_record(self, name:str, parameters:dict=None, inplace=False) -> dict:
+        """Record a data processing step in the processes list.
+
+        Set inplace=True to update self.processes list in place."""
+        new_entry = {
+                'name': name,
+                'date_time': str(pd.Timestamp.now()),
+                **parameters,
+            }
+
+        if inplace:
+            self.processes.append(new_entry)
+
+        return new_entry
+
+
+    def drop_methylated_CH(self, inplace=False) -> Self|None:
         """Return a new MethylationDataset with reads that have methylated CpH
         removed from locus_data and read_data."""
 
         m = self.locus_data.BismarkCode.isin(['X', 'H', 'U'])
         bad_aln = self.locus_data.loc[m, 'AlignmentIndex'].unique()
-        locdat = self.locus_data.loc[~self.locus_data.AlignmentIndex.isin(bad_aln)].reset_index(drop=True)
-        readat = self.read_data.loc[~self.read_data.AlignmentIndex.isin(bad_aln)].reset_index(drop=True)
-        procs = copy.copy(self.processes)
-        procs.append({
-            'name': 'drop_methylated_CH',
-            'date_time': str(pd.Timestamp.now()),
-            'n_dropped_reads': len(bad_aln),
-            'reads_remaining': readat.shape[0],
-        })
 
-        return MethylationDataset(
-            locus_data=locdat,
-            read_data=readat,
-            processes=procs,
+        proc_rec = dict(name='drop_mCH_reads', )
+        if inplace:
+            self.get_process_record(**proc_rec, inplace=True)
+            self.drop_alignments(bad_aln, inplace=True)
+            return None
+        else:
+            self.get_process_record(**proc_rec)
+            return self.drop_alignments(bad_aln)
+
+    def drop_alignments(self, aln_ids, inplace=False) -> Self|None:
+        """Drop given alignments from read and locus data tables."""
+        locdat = self.locus_data.loc[~self.locus_data.AlignmentIndex.isin(aln_ids)].reset_index(drop=True)
+        reads_init = self.read_data.shape[0]
+        readat = self.read_data.loc[~self.read_data.AlignmentIndex.isin(aln_ids)].reset_index(drop=True)
+        procs = self.get_process_record(
+            name='drop_alignments',
+            parameters={'num_reads_removed': reads_init-readat.shape[0], 'reads_remaining':readat.shape[0]},
+            inplace=inplace
         )
+
+        if not inplace:
+            return MethylationDataset(
+                locus_data=locdat,
+                read_data=readat,
+                processes=self.processes + [procs],
+            )
+        else:
+            self.locus_data = locdat
+            self.read_data = readat
+            return None
+
+    def harmonise_tables(self, inplace=False):
+        """Match alignment IDs, removing alignments from either table that don't appear in the other."""
+        loc_aln = set(self.locus_data.AlignmentIndex.unique())
+        read_aln = set(self.read_data.AlignmentIndex.unique())
+        aln_to_keep = loc_aln.intersection(read_aln)
+
+        proc_rec = dict(name='harmonise_tables', parameters={'num_alignments_removed': len(loc_aln.symmetric_difference(read_aln))})
+        if inplace:
+            self.get_process_record(**proc_rec, inplace=True)
+            self.drop_alignments(aln_to_keep, inplace=True)
+            return None
+        else:
+
+            mdat = self.drop_alignments(aln_to_keep)
+            mdat.get_process_record(**proc_rec, inplace=True)
+            return mdat
 
     # getitem to allow tuple unpacking, e.g. locus, read, meta = dataset
     def __getitem__(self, index):
@@ -473,9 +537,8 @@ def synthetic_sample(
     locus_tables = []
     read_tables = []
     total_reads = 0
-    metadata = {
-        'processes': ['create_synthetic_sample: ' + ', '.join([f'{p} from {d}' for d, p, _ in inputs])]
-    }
+    metadata = [{'Name':'create_synthetic_sample', 'Composition':', '.join([f'{p} from {d}' for d, p, _ in inputs])}]
+
 
     # normalise the proportions
     total_proportion = sum([p for _, p, _ in inputs])
