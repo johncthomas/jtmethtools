@@ -1,0 +1,8 @@
+2025-07-16 14:34:11.599 | INFO     | jtmethtools.scripts.write_methylation_data:bam_to_parquet:87 - Write methylation dataset
+2025-07-16 14:34:11.599 | INFO     | jtmethtools.scripts.write_methylation_data:bam_to_parquet:88 - ArgsMethylationData(bam=PosixPath('/home/jcthomas/python/jtmethtools/src/jtmethtools/tests/tmp/tst2_full.sam'), outdir=PosixPath('/home/jcthomas/python/jtmethtools/src/jtmethtools/tests/tmp/test-methylation-data/t2_all_chrm_unmethylated'), regions=None, single_end=True, all_chrm=True, unmethylated_ch=True, quiet=False)
+2025-07-16 14:34:11.599 | INFO     | jtmethtools.methylation_data:process_bam_methylation_data:78 - Processing BAM, /home/jcthomas/python/jtmethtools/src/jtmethtools/tests/tmp/tst2_full.sam, 0-inf.
+2025-07-16 14:34:11.599 | INFO     | jtmethtools.alignments:iter_bam_segments:541 - sorting_method='coordinate'
+2025-07-16 14:34:11.599 | INFO     | jtmethtools.methylation_data:process_bam_methylation_data:142 - Reads in BAM: 3
+2025-07-16 14:34:11.600 | INFO     | jtmethtools.methylation_data:process_bam_methylation_data:185 - At start for processing alignments {
+2025-07-16 14:34:11.600 | INFO     | jtmethtools.methylation_data:log_memory_footprint:60 - Memory usage: 120.99 MB
+2025-07-16 14:34:11.600 | INFO     | jtmethtools.alignments:iter_bam_segments:541 - sorting_method='coordinate'

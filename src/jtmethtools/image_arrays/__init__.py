@@ -1,0 +1,1 @@
+"""Convert bams into image arrays that encode various aspects of the alignments. Intended as input for CNNs."""

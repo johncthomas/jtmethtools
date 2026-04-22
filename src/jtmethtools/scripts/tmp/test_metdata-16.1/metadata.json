@@ -1,0 +1,8 @@
+[
+    {
+        "name": "process_bam_methylation_data",
+        "bam_file": "/home/jcthomas/hdc-bigdata/users/jct61/tasks/251219.canary_batches/data/bam/filtered_highgood_260122/CMDL19003169.deduplicated.sorted.bam",
+        "regions_file": null,
+        "date_time": "2026-02-03 15:25:47.005324"
+    }
+]

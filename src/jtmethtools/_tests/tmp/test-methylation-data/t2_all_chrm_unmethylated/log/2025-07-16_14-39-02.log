@@ -1,0 +1,12 @@
+2025-07-16 14:39:02.302 | INFO     | jtmethtools.scripts.write_methylation_data:bam_to_parquet:87 - Write methylation dataset
+2025-07-16 14:39:02.302 | INFO     | jtmethtools.scripts.write_methylation_data:bam_to_parquet:88 - ArgsMethylationData(bam=PosixPath('/home/jcthomas/python/jtmethtools/src/jtmethtools/tests/tmp/tst2_full.sam'), outdir=PosixPath('/home/jcthomas/python/jtmethtools/src/jtmethtools/tests/tmp/test-methylation-data/t2_all_chrm_unmethylated'), regions=None, single_end=True, all_chrm=True, unmethylated_ch=True, quiet=True)
+2025-07-16 14:39:02.302 | INFO     | jtmethtools.methylation_data:process_bam_methylation_data:78 - Processing BAM, /home/jcthomas/python/jtmethtools/src/jtmethtools/tests/tmp/tst2_full.sam, 0-inf.
+2025-07-16 14:39:02.302 | INFO     | jtmethtools.alignments:iter_bam_segments:541 - sorting_method='coordinate'
+2025-07-16 14:39:02.302 | INFO     | jtmethtools.methylation_data:process_bam_methylation_data:142 - Reads in BAM: 3
+2025-07-16 14:39:02.302 | INFO     | jtmethtools.methylation_data:process_bam_methylation_data:185 - At start for processing alignments {
+2025-07-16 14:39:02.302 | INFO     | jtmethtools.methylation_data:log_memory_footprint:60 - Memory usage: 122.15 MB
+2025-07-16 14:39:02.302 | INFO     | jtmethtools.alignments:iter_bam_segments:541 - sorting_method='coordinate'
+2025-07-16 14:39:02.303 | INFO     | jtmethtools.methylation_data:process_bam_methylation_data:244 - Reached max reads, stopping processing. bamfn=PosixPath('/home/jcthomas/python/jtmethtools/src/jtmethtools/tests/tmp/tst2_full.sam'), max_reads=4.
+2025-07-16 14:39:02.303 | INFO     | jtmethtools.methylation_data:process_bam_methylation_data:263 - Finished processing alignments.
+2025-07-16 14:39:02.303 | INFO     | jtmethtools.methylation_data:log_memory_footprint:60 - Memory usage: 122.15 MB
+2025-07-16 14:39:02.303 | INFO     | jtmethtools.scripts.write_methylation_data:bam_to_parquet:103 - Writing to /home/jcthomas/python/jtmethtools/src/jtmethtools/tests/tmp/test-methylation-data/t2_all_chrm_unmethylated

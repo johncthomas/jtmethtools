@@ -1,0 +1,3 @@
+2025-07-16 14:29:07.953 | INFO     | jtmethtools.scripts.write_methylation_data:bam_to_parquet:87 - Write methylation dataset
+2025-07-16 14:29:07.953 | INFO     | jtmethtools.scripts.write_methylation_data:bam_to_parquet:88 - ArgsMethylationData(bam=PosixPath('/home/jcthomas/python/jtmethtools/src/jtmethtools/tests/tmp/tst2_full.sam'), outdir=PosixPath('/home/jcthomas/python/jtmethtools/src/jtmethtools/tests/tmp/test-methylation-data/t1_defaults'), regions=None, single_end=True, all_chrm=False, unmethylated_ch=False, quiet=True)
+2025-07-16 14:29:07.953 | INFO     | jtmethtools.methylation_data:process_bam_methylation_data:78 - Processing BAM, /home/jcthomas/python/jtmethtools/src/jtmethtools/tests/tmp/tst2_full.sam, 0-inf.

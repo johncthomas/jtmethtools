@@ -1,0 +1,9 @@
+2025-07-16 14:30:07.093 | INFO     | jtmethtools.scripts.write_methylation_data:bam_to_parquet:87 - Write methylation dataset
+2025-07-16 14:30:07.093 | INFO     | jtmethtools.scripts.write_methylation_data:bam_to_parquet:88 - ArgsMethylationData(bam=PosixPath('/home/jcthomas/python/jtmethtools/src/jtmethtools/tests/tmp/tst2_full.sam'), outdir=PosixPath('/home/jcthomas/python/jtmethtools/src/jtmethtools/tests/tmp/test-methylation-data/t1_defaults'), regions=None, single_end=True, all_chrm=False, unmethylated_ch=False, quiet=True)
+2025-07-16 14:30:07.093 | INFO     | jtmethtools.methylation_data:process_bam_methylation_data:78 - Processing BAM, /home/jcthomas/python/jtmethtools/src/jtmethtools/tests/tmp/tst2_full.sam, 0-inf.
+2025-07-16 14:30:07.093 | INFO     | jtmethtools.alignments:iter_bam_segments:541 - sorting_method='coordinate'
+2025-07-16 14:30:07.099 | WARNING  | jtmethtools.alignments:iter_bam_segments:552 - BAM file (/home/jcthomas/python/jtmethtools/src/jtmethtools/tests/tmp/tst2_full.sam) is not paired-end, but paired_end=True was set. Running as single-ended.
+2025-07-16 14:30:07.099 | INFO     | jtmethtools.methylation_data:process_bam_methylation_data:184 - At start for processing alignments {
+2025-07-16 14:30:07.103 | INFO     | jtmethtools.methylation_data:log_memory_footprint:60 - Memory usage: 117.21 MB
+2025-07-16 14:30:07.104 | INFO     | jtmethtools.alignments:iter_bam_segments:541 - sorting_method='coordinate'
+2025-07-16 14:30:07.104 | INFO     | jtmethtools.methylation_data:process_bam_methylation_data:243 - Reached max reads, stopping processing. bamfn=PosixPath('/home/jcthomas/python/jtmethtools/src/jtmethtools/tests/tmp/tst2_full.sam'), max_reads=1.
