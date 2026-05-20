@@ -27,7 +27,8 @@ from attrs import define
 
 __all__ = ["CANNONICAL_CHRM", "setup_logfile", "fasta_to_dict", "read_bismark_calls_table",
            "split_table_by_chrm", "read_region_bed", "read_cov", "write_cov", "filter_cov",
-           "write_array", "read_array", "read_bed", "table2df", "read_parquet", "log_memory_footprint"]
+           "write_array", "read_array", "read_bed", "table2df", "read_parquet", "log_memory_footprint",
+           "plt_labels"]
 
 def set_logger(min_level='DEBUG'):
 
@@ -590,3 +591,15 @@ def log_memory_footprint():
     memory_usage_mb = memory_usage / (1024 ** 2)
 
     logger.info(f"Memory usage: {memory_usage_mb:.2f} MB")
+
+
+
+def plt_labels(xlab='', ylab='', title='', ax=None):
+    """Add axes labels and figure title to the current matplotlib Figure"""
+    import matplotlib.pyplot as plt
+
+    if ax is None:
+        ax = plt.gca()
+    ax.set_xlabel(xlab)
+    ax.set_ylabel(ylab)
+    ax.set_title(title)
