@@ -293,9 +293,9 @@ class ReadStatsArgs:
     #     help='Do not write table of read stats.'
     # ))
     quiet: bool = field(metadata=dict(
-        default=False,
+
         help="Don't print logging messages."
-    ))
+    ), default=False,)
 
 
 def read_stats_cli(args:ReadStatsArgs=None):
