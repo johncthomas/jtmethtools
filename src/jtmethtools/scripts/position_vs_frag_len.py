@@ -39,9 +39,7 @@ def get_counts(bamfn, width=300):
         if aln.a2 is None:
             continue
 
-        metsymb = set(aln.metstr)
-
-        if ('H' in metsymb) or ('U' in metsymb) or ('X' in metsymb):
+        if aln.has_methylated_ch():
             continue
 
         frag_len = (aln.reference_end - aln.reference_start)
@@ -68,6 +66,23 @@ def get_counts(bamfn, width=300):
 
 
 def plot_counts(counts_r1_r2, smooth=6, min_obs=20):
+    try:
+        import seaborn as sns
+        sns.set_theme(
+            style='whitegrid',
+            context='paper',
+            rc={
+                'figure.dpi': 150,
+                'figure.figsize': (5, 3.75),
+                'savefig.bbox': 'tight',  # expands canvas to fit all the image
+                'hist.bins': 20,
+                'ytick.labelsize': 'x-small',
+                'xtick.labelsize': 'x-small',
+                'axes.labelsize': 'small',
+            }
+        )
+    except ImportError:
+        pass
 
     figs = {}
 
@@ -97,7 +112,9 @@ def plot_counts(counts_r1_r2, smooth=6, min_obs=20):
     return figs
 
 
-def main(bamfn, plot_out_dir, array_out_dir=None, sample_name=None, width=300, smooth=6, write_arrays=False):
+def main(bamfn, plot_out_dir, array_out_dir=None,
+         sample_name=None, width=300, smooth=6, write_arrays=False,
+         min_obs=20):
     """Run counts + plotting workflow and write outputs.
 
     Files are written with prefix: outdir / (sample_name + '.').
@@ -113,7 +130,7 @@ def main(bamfn, plot_out_dir, array_out_dir=None, sample_name=None, width=300, s
 
     counts_r1_r2 = get_counts(bamfn, width=width)
 
-    figs = plot_counts(counts_r1_r2, smooth=smooth)
+    figs = plot_counts(counts_r1_r2, smooth=smooth, min_obs=min_obs)
     plot_prefix = plot_out_dir / f"{sample}."
     for i, fig in figs.items():
         fig.savefig(str(plot_prefix) + f"position-vs-frag-len.read{i}.png", dpi=150, bbox_inches='tight')
@@ -128,6 +145,22 @@ def main(bamfn, plot_out_dir, array_out_dir=None, sample_name=None, width=300, s
 
     return counts_r1_r2
 
+
+def cli():
+    args = datargs.parse(CLIArgs)
+
+    if args.plot_out_dir is None and args.array_out_dir is None:
+        raise ValueError("Provide at least one of --plot-out-dir or --array-out-dir, otherwise no results are written.")
+
+    main(
+        bamfn=args.bamfn,
+        plot_out_dir=args.plot_out_dir,
+        array_out_dir=args.array_out_dir,
+        sample_name=args.sample_name,
+        width=args.width,
+        smooth=args.smooth,
+        write_arrays=args.array_out_dir is not None
+    )
 
 @datargs.argsclass(
     description="""\
@@ -146,10 +179,9 @@ class CLIArgs:
         aliases=['-b'],
     ))
     plot_out_dir: Path = field(metadata=dict(
-        required=True,
         help="Directory for output PNG plots. Created if it does not exist.",
-        aliases=['-p'],
-    ))
+        aliases=['-o', '-p'],
+    ), default=None)
     array_out_dir: Path = field(metadata=dict(
         required=False,
         help=("Directory for output CSV count matrices (met1/tot1/met2/tot2). "
@@ -171,18 +203,11 @@ class CLIArgs:
         help="Box-filter window size for smoothing the methylation heatmap. "
              "Odd values are rounded up to the next even number.",
     ), default=6)
+    min_obs: int = field(metadata=dict(
+        help="Minimum count threshold for a position to be plotted in the heatmap. Written arrays are not filtered."
+    ), default=20)
 
 
 
 if __name__ == "__main__":
-    args = datargs.parse(CLIArgs)
-
-    main(
-        bamfn=args.bamfn,
-        plot_out_dir=args.plot_out_dir,
-        array_out_dir=args.array_out_dir,
-        sample_name=args.sample_name,
-        width=args.width,
-        smooth=args.smooth,
-        write_arrays=args.array_out_dir is not None
-    )
+    cli()
