@@ -2,7 +2,7 @@
 `jtmethtools` is a package to facilitate the analysis of sequence based methylation data. It builds on [Bismark](https://felixkrueger.github.io/Bismark/) outputs and provides scripts for 
 generating detailed data tables and plots.
 
-It also provides an API for custom analyses of methylation data, described in detail [here](https://github.com/johncthomas/jtmethtools/deployments/github-pages)
+It also provides an API for custom analyses of methylation data, described in detail [here](https://johncthomas.github.io/jtmethtools/)
 
 # Installation
 
