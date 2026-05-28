@@ -55,7 +55,7 @@ def get_counts(bamfn, width=300):
                 if (q is None) or (r is None):
                     continue
                 if metstr[q] in ('z', 'Z'):
-                    frag_pos = q if a.is_forward else a.query_alignment_length - q
+                    frag_pos = q if a.is_forward else a.query_length - q
                     counts_r1_r2[f"met{ri}"][frag_pos, frag_len] += metstr[q] == 'Z'
                     counts_r1_r2[f"tot{ri}"][frag_pos, frag_len] += 1
     for i in ('1', '2'):
