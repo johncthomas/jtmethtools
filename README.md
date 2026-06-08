@@ -88,27 +88,6 @@ A wrapper around one or two `pysam.AlignedSegment` objects (single-end or paired
 By default values in the read with the highest PHRED score is used at each position for overlapping mates, 
 or optionally you can prefer Read 1.
 
-As an example of possible utility, this snippet would count the number of methylated/unmethylated CpHs as a function of PHRED score:
-
-```python
-import numpy as np
-import jtmethtools as jtm
-
-ch_count_arrays = {
-    "methylated": np.zeros(60, dtype=int),
-    "unmethylated": np.zeros(60, dtype=int),
-}
-
-for alignment in jtm.iter_bam("sample.bam", paired_end=True):
-    for pos, code in alignment.locus_methylation.items():
-        if code in "Hh":  # CpH context
-            is_methylated = 'methylated' if code.isupper() else 'unmethylated'
-            phred = alignment.locus_quality[pos]
-            ch_count_arrays[is_methylated][phred] += 1
-```
-
-The underlying `pysam` objects are accessible as `alignment.a` and `alignment.a2`, so you can use any PySam functionality you need, to filter by mapping quality, check flags, etc.
-
 
 ## Working with Bismark tables
 
