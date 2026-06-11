@@ -191,27 +191,27 @@ def get_counts(bamfn,  paired_end=True, width=300, min_mapq=20) -> PosMet:
     return counts_r1_r2
 
 
-def smooth_counts(self, sigma=2) -> NDArray:
+def smooth_counts(arr, sigma=2) -> NDArray:
     """Apply gaussian smoothing with edge filling to avoid data loss at the edges."""
 
-    for k, arr in self:
-        def _nanmean_filter(values):
-            vals = values[~np.isnan(values)]
-            return vals.mean() if len(vals) else np.nan
 
-        filled = arr.copy()
+    def _nanmean_filter(values):
+        vals = values[~np.isnan(values)]
+        return vals.mean() if len(vals) else np.nan
 
-        mask = np.isnan(arr)
+    filled = arr.copy()
 
-        local_means = generic_filter(
-            arr,
-            _nanmean_filter,
-            size=20,
-            mode='nearest'
-        )
+    mask = np.isnan(arr)
 
-        filled[mask] = local_means[mask]
-        smooth = scipy.ndimage.gaussian_filter(filled, sigma=sigma)
+    local_means = generic_filter(
+        arr,
+        _nanmean_filter,
+        size=20,
+        mode='nearest'
+    )
+
+    filled[mask] = local_means[mask]
+    smooth = scipy.ndimage.gaussian_filter(filled, sigma=sigma)
     return smooth
 
 
