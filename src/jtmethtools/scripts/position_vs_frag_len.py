@@ -156,7 +156,7 @@ def get_counts(bamfn,  paired_end=True, width=300, min_mapq=20) -> PosMet:
                     for k in ARR_KEYS[paired_end]}
     counts_r1_r2 = PosMet(**arrays)
 
-    for aln in jtm.iter_bam(bamfn, paired_end=True):
+    for aln in jtm.iter_bam(bamfn, paired_end=paired_end):
 
         if aln.mapping_quality() < min_mapq:
             continue
