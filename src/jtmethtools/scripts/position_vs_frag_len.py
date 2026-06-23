@@ -69,12 +69,14 @@ class PosMet:
     @property
     def mean1(self):
         """Mean methylation of read 1"""
-        return self.met1/self.tot1
+        with np.errstate(divide='ignore', invalid='ignore'):
+            return self.met1/self.tot1
     @property
     def mean2(self):
         """Mean methylation of read 2"""
         if self.paired_end:
-            return self.met2/self.tot2
+            with np.errstate(divide='ignore', invalid='ignore'):
+                return self.met2/self.tot2
         else:
             return None
 
@@ -263,9 +265,9 @@ def plot_counts(podmet:PosMet, sigma=6, min_obs=20):
 
             plt.sca(ax2)
 
-            plt.plot(
-                np.nanmean(podmet[f'mean{i}'], axis=0)
-            )
+            with np.errstate(divide='ignore', invalid='ignore'):
+                X = np.nanmean(podmet[f'mean{i}'], axis=0)
+            plt.plot(X)
             plt_labels('Fragment length', 'Prop. methylation',
                        f"{read_label} methylation by fragment length")
             plt.tight_layout()
