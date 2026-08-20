@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jtmethtools"
-version = "1.1"  # update changes list https://devlabcomputationalwiki.atlassian.net/wiki/spaces/Wiki/pages/edit-v2/123928577
+version = "1.1.0"  # update changes list https://devlabcomputationalwiki.atlassian.net/wiki/spaces/Wiki/pages/edit-v2/123928577
 description = "Tools & data structures for methylation data."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -29,6 +29,7 @@ where = ["src"]
 
 jtm-write-methylation-data = "jtmethtools.scripts.write_methylation_data:main"
 jtm-read-stats = "jtmethtools.scripts.read_stats:read_stats_cli"
+jtm-filter-mCH = "jtmethtools.scripts.filter_CH:main"
 jtm-pos-beta = "jtmethtools.scripts.metrics:cli_met_by_pos"
 jtm-alignment-metrics = "jtmethtools.scripts.metrics:cli_met_stats_in_regions"
 jtm-write-mixed-bam = "jtmethtools.scripts.write_mixed_bam:cli"
