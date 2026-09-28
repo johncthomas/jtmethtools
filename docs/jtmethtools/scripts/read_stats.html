@@ -88,12 +88,6 @@
                                 <a class="variable" href="#ReadStatsArgs.all_chrm">all_chrm</a>
                         </li>
                         <li>
-                                <a class="variable" href="#ReadStatsArgs.no_plot">no_plot</a>
-                        </li>
-                        <li>
-                                <a class="variable" href="#ReadStatsArgs.no_table">no_table</a>
-                        </li>
-                        <li>
                                 <a class="variable" href="#ReadStatsArgs.quiet">quiet</a>
                         </li>
                 </ul>
@@ -409,18 +403,18 @@
 </span><span id="L-284"><a href="#L-284"><span class="linenos">284</span></a>        <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
 </span><span id="L-285"><a href="#L-285"><span class="linenos">285</span></a>        <span class="n">help</span><span class="o">=</span><span class="s1">&#39;By default, only include reads from cannonical chromosomes. Set this to include all chromosomes.&#39;</span>
 </span><span id="L-286"><a href="#L-286"><span class="linenos">286</span></a>    <span class="p">))</span>
-</span><span id="L-287"><a href="#L-287"><span class="linenos">287</span></a>    <span class="n">no_plot</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">metadata</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
-</span><span id="L-288"><a href="#L-288"><span class="linenos">288</span></a>        <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-</span><span id="L-289"><a href="#L-289"><span class="linenos">289</span></a>        <span class="n">help</span><span class="o">=</span><span class="s1">&#39;Do not generate a plot of length vs methylation status.&#39;</span>
-</span><span id="L-290"><a href="#L-290"><span class="linenos">290</span></a>    <span class="p">))</span>
-</span><span id="L-291"><a href="#L-291"><span class="linenos">291</span></a>    <span class="n">no_table</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">metadata</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
-</span><span id="L-292"><a href="#L-292"><span class="linenos">292</span></a>        <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-</span><span id="L-293"><a href="#L-293"><span class="linenos">293</span></a>        <span class="n">help</span><span class="o">=</span><span class="s1">&#39;Do not write table of read stats.&#39;</span>
-</span><span id="L-294"><a href="#L-294"><span class="linenos">294</span></a>    <span class="p">))</span>
+</span><span id="L-287"><a href="#L-287"><span class="linenos">287</span></a>    <span class="c1"># plot_len_vs_m: bool = field(metadata=dict(</span>
+</span><span id="L-288"><a href="#L-288"><span class="linenos">288</span></a>    <span class="c1">#     default=False,</span>
+</span><span id="L-289"><a href="#L-289"><span class="linenos">289</span></a>    <span class="c1">#     help=&#39;Generate a plot of read length vs &#39;</span>
+</span><span id="L-290"><a href="#L-290"><span class="linenos">290</span></a>    <span class="c1"># ))</span>
+</span><span id="L-291"><a href="#L-291"><span class="linenos">291</span></a>    <span class="c1"># no_table: bool = field(metadata=dict(</span>
+</span><span id="L-292"><a href="#L-292"><span class="linenos">292</span></a>    <span class="c1">#     default=False,</span>
+</span><span id="L-293"><a href="#L-293"><span class="linenos">293</span></a>    <span class="c1">#     help=&#39;Do not write table of read stats.&#39;</span>
+</span><span id="L-294"><a href="#L-294"><span class="linenos">294</span></a>    <span class="c1"># ))</span>
 </span><span id="L-295"><a href="#L-295"><span class="linenos">295</span></a>    <span class="n">quiet</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">metadata</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
-</span><span id="L-296"><a href="#L-296"><span class="linenos">296</span></a>        <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+</span><span id="L-296"><a href="#L-296"><span class="linenos">296</span></a>
 </span><span id="L-297"><a href="#L-297"><span class="linenos">297</span></a>        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Don&#39;t print logging messages.&quot;</span>
-</span><span id="L-298"><a href="#L-298"><span class="linenos">298</span></a>    <span class="p">))</span>
+</span><span id="L-298"><a href="#L-298"><span class="linenos">298</span></a>    <span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">,)</span>
 </span><span id="L-299"><a href="#L-299"><span class="linenos">299</span></a>
 </span><span id="L-300"><a href="#L-300"><span class="linenos">300</span></a>
 </span><span id="L-301"><a href="#L-301"><span class="linenos">301</span></a><span class="k">def</span><span class="w"> </span><span class="nf">read_stats_cli</span><span class="p">(</span><span class="n">args</span><span class="p">:</span><span class="n">ReadStatsArgs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
@@ -440,21 +434,23 @@
 </span><span id="L-315"><a href="#L-315"><span class="linenos">315</span></a>    <span class="n">run</span><span class="p">(</span>
 </span><span id="L-316"><a href="#L-316"><span class="linenos">316</span></a>        <span class="n">args</span><span class="o">.</span><span class="n">bamfn</span><span class="p">,</span>
 </span><span id="L-317"><a href="#L-317"><span class="linenos">317</span></a>        <span class="n">out_prefix</span><span class="p">,</span>
-</span><span id="L-318"><a href="#L-318"><span class="linenos">318</span></a>        <span class="n">do_plot</span><span class="o">=</span><span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">no_plot</span><span class="p">,</span>
-</span><span id="L-319"><a href="#L-319"><span class="linenos">319</span></a>        <span class="n">write_table</span><span class="o">=</span><span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">no_table</span><span class="p">,</span>
-</span><span id="L-320"><a href="#L-320"><span class="linenos">320</span></a>        <span class="n">cannon_chrm</span><span class="o">=</span><span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">all_chrm</span>
-</span><span id="L-321"><a href="#L-321"><span class="linenos">321</span></a>    <span class="p">)</span>
-</span><span id="L-322"><a href="#L-322"><span class="linenos">322</span></a><span class="c1">#</span>
-</span><span id="L-323"><a href="#L-323"><span class="linenos">323</span></a><span class="c1"># logger.add(sys.stdout, level=&quot;INFO&quot;, colorize=True)</span>
-</span><span id="L-324"><a href="#L-324"><span class="linenos">324</span></a><span class="c1"># tbl = _get_stats_array(&#39;/media/jcthomas/JCT61-1/Data/250330_3datasets/CMDL19003184.deduplicated.sorted.bam&#39;)</span>
-</span><span id="L-325"><a href="#L-325"><span class="linenos">325</span></a><span class="c1"># table = (tbl, &#39;/home/jcthomas/test_read_stats.parquet&#39;)</span>
-</span><span id="L-326"><a href="#L-326"><span class="linenos">326</span></a><span class="c1">#ttest_np()</span>
-</span><span id="L-327"><a href="#L-327"><span class="linenos">327</span></a><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
-</span><span id="L-328"><a href="#L-328"><span class="linenos">328</span></a>    <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
-</span><span id="L-329"><a href="#L-329"><span class="linenos">329</span></a>    <span class="k">if</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;test&#39;</span><span class="p">):</span>
-</span><span id="L-330"><a href="#L-330"><span class="linenos">330</span></a>        <span class="n">ttest</span><span class="p">()</span>
-</span><span id="L-331"><a href="#L-331"><span class="linenos">331</span></a>    <span class="k">else</span><span class="p">:</span>
-</span><span id="L-332"><a href="#L-332"><span class="linenos">332</span></a>        <span class="n">read_stats_cli</span><span class="p">()</span>
+</span><span id="L-318"><a href="#L-318"><span class="linenos">318</span></a>        <span class="c1"># do_plot=args.plot_len_vs_m,</span>
+</span><span id="L-319"><a href="#L-319"><span class="linenos">319</span></a>        <span class="c1"># write_table=not args.no_table,</span>
+</span><span id="L-320"><a href="#L-320"><span class="linenos">320</span></a>        <span class="n">do_plot</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+</span><span id="L-321"><a href="#L-321"><span class="linenos">321</span></a>        <span class="n">write_table</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span id="L-322"><a href="#L-322"><span class="linenos">322</span></a>        <span class="n">cannon_chrm</span><span class="o">=</span><span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">all_chrm</span>
+</span><span id="L-323"><a href="#L-323"><span class="linenos">323</span></a>    <span class="p">)</span>
+</span><span id="L-324"><a href="#L-324"><span class="linenos">324</span></a><span class="c1">#</span>
+</span><span id="L-325"><a href="#L-325"><span class="linenos">325</span></a><span class="c1"># logger.add(sys.stdout, level=&quot;INFO&quot;, colorize=True)</span>
+</span><span id="L-326"><a href="#L-326"><span class="linenos">326</span></a><span class="c1"># tbl = _get_stats_array(&#39;/media/jcthomas/JCT61-1/Data/250330_3datasets/CMDL19003184.deduplicated.sorted.bam&#39;)</span>
+</span><span id="L-327"><a href="#L-327"><span class="linenos">327</span></a><span class="c1"># table = (tbl, &#39;/home/jcthomas/test_read_stats.parquet&#39;)</span>
+</span><span id="L-328"><a href="#L-328"><span class="linenos">328</span></a><span class="c1">#ttest_np()</span>
+</span><span id="L-329"><a href="#L-329"><span class="linenos">329</span></a><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
+</span><span id="L-330"><a href="#L-330"><span class="linenos">330</span></a>    <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+</span><span id="L-331"><a href="#L-331"><span class="linenos">331</span></a>    <span class="k">if</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;test&#39;</span><span class="p">):</span>
+</span><span id="L-332"><a href="#L-332"><span class="linenos">332</span></a>        <span class="n">ttest</span><span class="p">()</span>
+</span><span id="L-333"><a href="#L-333"><span class="linenos">333</span></a>    <span class="k">else</span><span class="p">:</span>
+</span><span id="L-334"><a href="#L-334"><span class="linenos">334</span></a>        <span class="n">read_stats_cli</span><span class="p">()</span>
 </span></pre></div>
 
 
@@ -501,7 +497,7 @@
                     <div class="attr variable">
             <span class="name">VALID_CHRM</span>        =
 <input id="VALID_CHRM-view-value" class="view-value-toggle-state" type="checkbox" aria-hidden="true" tabindex="-1">
-            <label class="view-value-button pdoc-button" for="VALID_CHRM-view-value"></label><span class="default_value">{&#39;chr4&#39;, &#39;chr2&#39;, &#39;chr12&#39;, &#39;chr15&#39;, &#39;Y&#39;, &#39;chrY&#39;, &#39;23&#39;, &#39;4&#39;, &#39;20&#39;, &#39;chr5&#39;, &#39;14&#39;, &#39;chr1&#39;, &#39;X&#39;, &#39;12&#39;, &#39;chr19&#39;, &#39;7&#39;, &#39;8&#39;, &#39;13&#39;, &#39;chr14&#39;, &#39;chr20&#39;, &#39;chr21&#39;, &#39;11&#39;, &#39;chr16&#39;, &#39;chr8&#39;, &#39;19&#39;, &#39;10&#39;, &#39;1&#39;, &#39;chr10&#39;, &#39;5&#39;, &#39;18&#39;, &#39;3&#39;, &#39;chr18&#39;, &#39;21&#39;, &#39;16&#39;, &#39;22&#39;, &#39;chr7&#39;, &#39;chr3&#39;, &#39;chr22&#39;, &#39;chrX&#39;, &#39;9&#39;, &#39;15&#39;, &#39;chr17&#39;, &#39;2&#39;, &#39;6&#39;, &#39;chr6&#39;, &#39;chr9&#39;, &#39;chr11&#39;, &#39;17&#39;, &#39;chr13&#39;, &#39;chr23&#39;}</span>
+            <label class="view-value-button pdoc-button" for="VALID_CHRM-view-value"></label><span class="default_value">{&#39;chr23&#39;, &#39;23&#39;, &#39;12&#39;, &#39;chr17&#39;, &#39;4&#39;, &#39;chr16&#39;, &#39;chr6&#39;, &#39;10&#39;, &#39;chr22&#39;, &#39;17&#39;, &#39;chr5&#39;, &#39;5&#39;, &#39;chr20&#39;, &#39;chr2&#39;, &#39;8&#39;, &#39;14&#39;, &#39;chr19&#39;, &#39;3&#39;, &#39;20&#39;, &#39;11&#39;, &#39;chr10&#39;, &#39;chr1&#39;, &#39;chrY&#39;, &#39;18&#39;, &#39;chr8&#39;, &#39;1&#39;, &#39;chr11&#39;, &#39;13&#39;, &#39;X&#39;, &#39;chr4&#39;, &#39;chr7&#39;, &#39;chr14&#39;, &#39;6&#39;, &#39;chr15&#39;, &#39;chr13&#39;, &#39;21&#39;, &#39;chr21&#39;, &#39;7&#39;, &#39;22&#39;, &#39;chr9&#39;, &#39;Y&#39;, &#39;chr3&#39;, &#39;16&#39;, &#39;19&#39;, &#39;9&#39;, &#39;chr18&#39;, &#39;chr12&#39;, &#39;2&#39;, &#39;15&#39;, &#39;chrX&#39;}</span>
 
         
     </div>
@@ -862,18 +858,18 @@ it, return the dictionary encoded arrow array.</p>
 </span><span id="ReadStatsArgs-285"><a href="#ReadStatsArgs-285"><span class="linenos">285</span></a>        <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
 </span><span id="ReadStatsArgs-286"><a href="#ReadStatsArgs-286"><span class="linenos">286</span></a>        <span class="n">help</span><span class="o">=</span><span class="s1">&#39;By default, only include reads from cannonical chromosomes. Set this to include all chromosomes.&#39;</span>
 </span><span id="ReadStatsArgs-287"><a href="#ReadStatsArgs-287"><span class="linenos">287</span></a>    <span class="p">))</span>
-</span><span id="ReadStatsArgs-288"><a href="#ReadStatsArgs-288"><span class="linenos">288</span></a>    <span class="n">no_plot</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">metadata</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
-</span><span id="ReadStatsArgs-289"><a href="#ReadStatsArgs-289"><span class="linenos">289</span></a>        <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-</span><span id="ReadStatsArgs-290"><a href="#ReadStatsArgs-290"><span class="linenos">290</span></a>        <span class="n">help</span><span class="o">=</span><span class="s1">&#39;Do not generate a plot of length vs methylation status.&#39;</span>
-</span><span id="ReadStatsArgs-291"><a href="#ReadStatsArgs-291"><span class="linenos">291</span></a>    <span class="p">))</span>
-</span><span id="ReadStatsArgs-292"><a href="#ReadStatsArgs-292"><span class="linenos">292</span></a>    <span class="n">no_table</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">metadata</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
-</span><span id="ReadStatsArgs-293"><a href="#ReadStatsArgs-293"><span class="linenos">293</span></a>        <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-</span><span id="ReadStatsArgs-294"><a href="#ReadStatsArgs-294"><span class="linenos">294</span></a>        <span class="n">help</span><span class="o">=</span><span class="s1">&#39;Do not write table of read stats.&#39;</span>
-</span><span id="ReadStatsArgs-295"><a href="#ReadStatsArgs-295"><span class="linenos">295</span></a>    <span class="p">))</span>
+</span><span id="ReadStatsArgs-288"><a href="#ReadStatsArgs-288"><span class="linenos">288</span></a>    <span class="c1"># plot_len_vs_m: bool = field(metadata=dict(</span>
+</span><span id="ReadStatsArgs-289"><a href="#ReadStatsArgs-289"><span class="linenos">289</span></a>    <span class="c1">#     default=False,</span>
+</span><span id="ReadStatsArgs-290"><a href="#ReadStatsArgs-290"><span class="linenos">290</span></a>    <span class="c1">#     help=&#39;Generate a plot of read length vs &#39;</span>
+</span><span id="ReadStatsArgs-291"><a href="#ReadStatsArgs-291"><span class="linenos">291</span></a>    <span class="c1"># ))</span>
+</span><span id="ReadStatsArgs-292"><a href="#ReadStatsArgs-292"><span class="linenos">292</span></a>    <span class="c1"># no_table: bool = field(metadata=dict(</span>
+</span><span id="ReadStatsArgs-293"><a href="#ReadStatsArgs-293"><span class="linenos">293</span></a>    <span class="c1">#     default=False,</span>
+</span><span id="ReadStatsArgs-294"><a href="#ReadStatsArgs-294"><span class="linenos">294</span></a>    <span class="c1">#     help=&#39;Do not write table of read stats.&#39;</span>
+</span><span id="ReadStatsArgs-295"><a href="#ReadStatsArgs-295"><span class="linenos">295</span></a>    <span class="c1"># ))</span>
 </span><span id="ReadStatsArgs-296"><a href="#ReadStatsArgs-296"><span class="linenos">296</span></a>    <span class="n">quiet</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">metadata</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span>
-</span><span id="ReadStatsArgs-297"><a href="#ReadStatsArgs-297"><span class="linenos">297</span></a>        <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+</span><span id="ReadStatsArgs-297"><a href="#ReadStatsArgs-297"><span class="linenos">297</span></a>
 </span><span id="ReadStatsArgs-298"><a href="#ReadStatsArgs-298"><span class="linenos">298</span></a>        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Don&#39;t print logging messages.&quot;</span>
-</span><span id="ReadStatsArgs-299"><a href="#ReadStatsArgs-299"><span class="linenos">299</span></a>    <span class="p">))</span>
+</span><span id="ReadStatsArgs-299"><a href="#ReadStatsArgs-299"><span class="linenos">299</span></a>    <span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">,)</span>
 </span></pre></div>
 
 
@@ -882,7 +878,7 @@ it, return the dictionary encoded arrow array.</p>
                             <div id="ReadStatsArgs.__init__" class="classattr">
                                 <div class="attr function">
             
-        <span class="name">ReadStatsArgs</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">bamfn</span><span class="p">:</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span>,</span><span class="param">	<span class="n">out_dir</span><span class="p">:</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span>,</span><span class="param">	<span class="n">sample_name</span><span class="p">:</span> <span class="nb">str</span>,</span><span class="param">	<span class="n">all_chrm</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>,</span><span class="param">	<span class="n">no_plot</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>,</span><span class="param">	<span class="n">no_table</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>,</span><span class="param">	<span class="n">quiet</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span></span>)</span>
+        <span class="name">ReadStatsArgs</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">bamfn</span><span class="p">:</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span>,</span><span class="param">	<span class="n">out_dir</span><span class="p">:</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span>,</span><span class="param">	<span class="n">sample_name</span><span class="p">:</span> <span class="nb">str</span>,</span><span class="param">	<span class="n">all_chrm</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>,</span><span class="param">	<span class="n">quiet</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span></span>)</span>
 
         
     </div>
@@ -936,30 +932,6 @@ it, return the dictionary encoded arrow array.</p>
     
 
                             </div>
-                            <div id="ReadStatsArgs.no_plot" class="classattr">
-                                <div class="attr variable">
-            <span class="name">no_plot</span><span class="annotation">: bool</span>        =
-<span class="default_value">False</span>
-
-        
-    </div>
-    <a class="headerlink" href="#ReadStatsArgs.no_plot"></a>
-    
-    
-
-                            </div>
-                            <div id="ReadStatsArgs.no_table" class="classattr">
-                                <div class="attr variable">
-            <span class="name">no_table</span><span class="annotation">: bool</span>        =
-<span class="default_value">False</span>
-
-        
-    </div>
-    <a class="headerlink" href="#ReadStatsArgs.no_table"></a>
-    
-    
-
-                            </div>
                             <div id="ReadStatsArgs.quiet" class="classattr">
                                 <div class="attr variable">
             <span class="name">quiet</span><span class="annotation">: bool</span>        =
@@ -1001,10 +973,12 @@ it, return the dictionary encoded arrow array.</p>
 </span><span id="read_stats_cli-316"><a href="#read_stats_cli-316"><span class="linenos">316</span></a>    <span class="n">run</span><span class="p">(</span>
 </span><span id="read_stats_cli-317"><a href="#read_stats_cli-317"><span class="linenos">317</span></a>        <span class="n">args</span><span class="o">.</span><span class="n">bamfn</span><span class="p">,</span>
 </span><span id="read_stats_cli-318"><a href="#read_stats_cli-318"><span class="linenos">318</span></a>        <span class="n">out_prefix</span><span class="p">,</span>
-</span><span id="read_stats_cli-319"><a href="#read_stats_cli-319"><span class="linenos">319</span></a>        <span class="n">do_plot</span><span class="o">=</span><span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">no_plot</span><span class="p">,</span>
-</span><span id="read_stats_cli-320"><a href="#read_stats_cli-320"><span class="linenos">320</span></a>        <span class="n">write_table</span><span class="o">=</span><span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">no_table</span><span class="p">,</span>
-</span><span id="read_stats_cli-321"><a href="#read_stats_cli-321"><span class="linenos">321</span></a>        <span class="n">cannon_chrm</span><span class="o">=</span><span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">all_chrm</span>
-</span><span id="read_stats_cli-322"><a href="#read_stats_cli-322"><span class="linenos">322</span></a>    <span class="p">)</span>
+</span><span id="read_stats_cli-319"><a href="#read_stats_cli-319"><span class="linenos">319</span></a>        <span class="c1"># do_plot=args.plot_len_vs_m,</span>
+</span><span id="read_stats_cli-320"><a href="#read_stats_cli-320"><span class="linenos">320</span></a>        <span class="c1"># write_table=not args.no_table,</span>
+</span><span id="read_stats_cli-321"><a href="#read_stats_cli-321"><span class="linenos">321</span></a>        <span class="n">do_plot</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+</span><span id="read_stats_cli-322"><a href="#read_stats_cli-322"><span class="linenos">322</span></a>        <span class="n">write_table</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span id="read_stats_cli-323"><a href="#read_stats_cli-323"><span class="linenos">323</span></a>        <span class="n">cannon_chrm</span><span class="o">=</span><span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">all_chrm</span>
+</span><span id="read_stats_cli-324"><a href="#read_stats_cli-324"><span class="linenos">324</span></a>    <span class="p">)</span>
 </span></pre></div>
 
 
