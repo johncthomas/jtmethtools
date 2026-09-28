@@ -359,7 +359,7 @@ class Alignment:
                 methylations[r_pos] = self._get_met_str(self.a)[q_pos]
         else: # it's a paired alignment
             if self.use_quality_profile:
-                from jtmethtools.quality_profiles import quality_profile_match_41, quality_profile_mismatch_41
+                from jtmethtools._quality_profiles import quality_profile_match_41, quality_profile_mismatch_41
             else:
                 quality_profile_match_41, quality_profile_mismatch_41 = None, None
 
