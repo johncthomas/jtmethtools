@@ -18,7 +18,7 @@ from numpy import typing as npt
 from numpy.typing import NDArray
 import re
 
-type Pathy = str|Path
+Pathy = str|Path
 
 
 
