@@ -1,14 +1,15 @@
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import numpy as np
 from copy import copy
 
-"""Plot strings of pearls representing methylation.
+"""Plot strings of pearl style representations of methylation reads.
 """
 
-__all__ = ["PearlFigure"]
+__all__ = ["MethylationPearls"]
 
 
-class PearlFigure:
+class MethylationPearlFig:
     """Plot circles on a line representing methylation
     state of reads.
 
@@ -17,7 +18,7 @@ class PearlFigure:
 
     ```python
     import matplotlib.pyplot as plt
-    with PearlFigure() as mfig:
+    with MethylationPearlFig() as mfig:
         mfig.add_metstr(0, 0, "ZzZ...zZ")
         # and/or equivilently, below the previous pearl string
         mfig.add_methylation_list(0, -2, [True, False, True, None, None, None, False, True])
@@ -64,7 +65,8 @@ class PearlFigure:
                 [y, y],
                 color='black',
                 linewidth=0.5,
-                linestyle='-'
+                linestyle='-',
+                zorder=-100,
             )
         )
 
@@ -101,7 +103,7 @@ class PearlFigure:
 
 
     def render(self, sz_mult=1.):
-        """Create the matplotlib figure and axes, and add the patches and lines to the axes."""
+        """Render the figure with the added patches."""
 
         # make the default == 1 but also be pretty small
         sz_mult /= 5
@@ -115,11 +117,11 @@ class PearlFigure:
         ax.set_xlim(self.lims[0] - 1, self.lims[1])
         ax.set_ylim(self.lims[2] - 1, self.lims[3] + 1)
         ax.set_aspect('equal', adjustable='box')
-
-        for patch in self._patches:
-            ax.add_patch(copy(patch))
         for line in self._lines:
             ax.add_line(copy(line))
+        for patch in self._patches:
+            ax.add_patch(copy(patch))
+
 
         ax.axis('off')
 
@@ -196,7 +198,7 @@ def ttest_methylation_figure():
     """Test the PearlFigure class."""
     import matplotlib.pyplot as plt
     # create the figure object
-    fig = PearlFigure()
+    fig = MethylationPearlFig()
     # add some random reads
     fig.add_methylation_list(0, 0, [True, False, True, True, False])
     fig.add_methylation_list(1, 2, [False, True, False])
@@ -209,7 +211,7 @@ def ttest_methylation_figure():
     plt.show()
 
     # test context manager method, and add_metstr
-    with PearlFigure() as mfig:
+    with MethylationPearlFig() as mfig:
         mfig.add_metstr(0, 0, "ZzZ...zZ")
         # and/or equivilently
         mfig.add_methylation_list(0, 2, [True, False, True, None, None, None, False, True])

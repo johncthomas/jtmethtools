@@ -39,7 +39,7 @@ def set_logger(min_level='DEBUG'):
     logger.add(lambda msg: print(f"\033[96m{msg}\033[0m"), level="INFO", format="{message}")
 
 
-SplitTable = dict[str, pd.DataFrame]
+type SplitTable = dict[str, pd.DataFrame]
 
 CANNONICAL_CHRM = [str(i) for i in range(1, 23)] + ['X', 'Y', 'MT']
 CANNONICAL_CHRM += ['chr' + c for c in CANNONICAL_CHRM]

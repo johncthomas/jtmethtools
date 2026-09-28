@@ -284,18 +284,18 @@ class ReadStatsArgs:
         default=False,
         help='By default, only include reads from cannonical chromosomes. Set this to include all chromosomes.'
     ))
-    # plot_len_vs_m: bool = field(metadata=dict(
-    #     default=False,
-    #     help='Generate a plot of read length vs '
-    # ))
-    # no_table: bool = field(metadata=dict(
-    #     default=False,
-    #     help='Do not write table of read stats.'
-    # ))
+    no_plot: bool = field(metadata=dict(
+        default=False,
+        help='Do not generate a plot of length vs methylation status.'
+    ))
+    no_table: bool = field(metadata=dict(
+        default=False,
+        help='Do not write table of read stats.'
+    ))
     quiet: bool = field(metadata=dict(
-
+        default=False,
         help="Don't print logging messages."
-    ), default=False,)
+    ))
 
 
 def read_stats_cli(args:ReadStatsArgs=None):
@@ -315,10 +315,8 @@ def read_stats_cli(args:ReadStatsArgs=None):
     run(
         args.bamfn,
         out_prefix,
-        # do_plot=args.plot_len_vs_m,
-        # write_table=not args.no_table,
-        do_plot=False,
-        write_table=True,
+        do_plot=not args.no_plot,
+        write_table=not args.no_table,
         cannon_chrm=not args.all_chrm
     )
 #

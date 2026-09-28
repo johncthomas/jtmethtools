@@ -1,3 +1,4 @@
+import collections
 import copy
 import json
 
@@ -117,6 +118,22 @@ class MethylationDataset:
         return new_entry
 
 
+    def drop_methylated_CH(self, inplace=False) -> Self|None:
+        """Return a new MethylationDataset with reads that have methylated CpH
+        removed from locus_data and read_data."""
+
+        m = self.locus_data.BismarkCode.isin(['X', 'H', 'U'])
+        bad_aln = self.locus_data.loc[m, 'AlignmentIndex'].unique()
+
+        proc_rec = dict(name='drop_mCH_reads', )
+        if inplace:
+            self.get_process_record(**proc_rec, inplace=True)
+            self.drop_alignments(bad_aln, inplace=True)
+            return None
+        else:
+            self.get_process_record(**proc_rec)
+            return self.drop_alignments(bad_aln)
+
     def drop_alignments(self, aln_ids, inplace=False) -> Self|None:
         """Drop given alignments from read and locus data tables."""
         locdat = self.locus_data.loc[~self.locus_data.AlignmentIndex.isin(aln_ids)].reset_index(drop=True)
@@ -156,6 +173,101 @@ class MethylationDataset:
             mdat.get_process_record(**proc_rec, inplace=True)
             return mdat
 
+
+    def filter_by_quality(
+            self,
+            min_phred: int = 24,
+            min_mapq: int = 20,
+            remove_mCH = True
+    ) -> Self:
+        """Remove all CH sites and remove reads with:
+            - any methylated CH sites
+            - any CpG site with PHRED < min_phred
+            - MAPQ < min_mapq
+        Returns filtered methylation data and read_data is also filtered to match.
+
+        Set min_phred or min_mapq to zero to disable them."""
+
+        read_data = self.read_data
+        mdat_full = self.locus_data
+
+
+        n_reads = read_data.shape[0]
+
+        # find and filter reads with methylated CH sites before removing all CH sites.
+        m_CH = mdat_full.BismarkCode.isin({'H', 'X', 'U'})
+
+        mdat_full.loc[:, 'IsCpG'] = mdat_full.BismarkCode.isin({'Z', 'z'})
+        mdat_full.loc[:, 'MetCpG'] = mdat_full.BismarkCode == 'Z'
+
+        mdat_cpg = mdat_full.loc[mdat_full.IsCpG]
+
+        # if min_phred > 0:
+        #     m = mdat_cpg.PhredScore < min_phred
+        #     bad_phred = set(mdat_cpg.loc[m, 'AlignmentIndex'].unique())
+        # else:
+        #     bad_phred = set()
+
+        if min_mapq > 0:
+            bad_mapq = set(read_data.loc[read_data.MappingQuality < min_mapq, 'AlignmentIndex'])
+        else:
+            bad_mapq = set()
+
+        if remove_mCH:
+            CH_alignments = set(mdat_full.loc[m_CH, 'AlignmentIndex'].unique())
+        else:
+            CH_alignments = set()
+
+        bad_reads = bad_mapq | CH_alignments
+
+        # remove rows with low phred from mdat_cpg
+        if min_phred > 0:
+            m_phred = mdat_cpg.Phred >= min_phred
+            mdat_cpg = mdat_cpg.loc[m_phred]
+            phred_removed = m_phred.shape[0] - sum(m_phred)
+            phred_message = (f" - {len(phred_removed)} ({len(phred_removed) /  m_phred.shape[0]:.2%}) "
+                             f"CpGs with PHRED < {min_phred}\n")
+        else:
+            phred_message = ''
+
+        mdat_cpg = mdat_cpg.loc[~mdat_cpg.AlignmentIndex.isin(bad_reads)]
+        keep_reads = read_data.AlignmentIndex.isin(mdat_cpg.AlignmentIndex)
+        read_data = read_data.loc[keep_reads]
+
+        # log proportion of reads filtered
+        n_bad = len(bad_reads)
+        prop_bad = n_bad / n_reads
+
+        n_nocpg = n_reads - n_bad - read_data.shape[0]
+        # individual counts for each filter
+        filter_message = (f"Proportions (note the same read can be double counted in these stats):"
+                    f"\n{phred_message}"
+                    f" - {len(bad_mapq)} ({len(bad_mapq) / n_reads:.2%}) reads with MAPQ < {min_mapq}\n"
+                    f" - {len(CH_alignments)} ({len(CH_alignments) / n_reads:.2%}) reads with any methylated CH sites\n"
+                    f" - {n_nocpg} ({n_nocpg / n_reads:.2%}) reads with no CpG sites"
+                    f"Total reads removed: {n_bad} of {n_reads} ({prop_bad:.2%}).")
+        logger.info(filter_message)
+
+        processes = self.processes
+        processes.append(
+            self.get_process_record(
+                'Filter',
+                dict(
+                    min_phred = 24,
+                    min_mapq = 20,
+                    remove_mCH = True,
+                    message = filter_message,
+                ),
+                inplace=False
+            )
+        )
+
+        out = MethylationDataset(
+            mdat_cpg, read_data, processes=processes
+        )
+
+        return out
+
     # getitem to allow tuple unpacking, e.g. locus, read, meta = dataset
     def __getitem__(self, index):
         if index == 0:
@@ -193,7 +305,8 @@ def process_bam_methylation_data(
         include_unmethylated_ch=False,
         chunk_size=int(1e6),
         min_mapq=0,
-        #min_phred=0, # this one's easier at the table level
+        min_phred=0,
+        drop_methylated_ch_reads=False,
 ) -> MethylationDataset:
 
     logger.info(f"Processing BAM, {bamfn}, {first_i}-{last_i}.")
@@ -309,6 +422,7 @@ def process_bam_methylation_data(
     current_locus_data = get_empty_locus_chunk()
     locus_cursor = 0
     read_cursor = 0
+    filter_counts = collections.Counter()
     logger.info('At start for processing alignments {')
     log_memory_footprint()
     for aln_i, aln in enumerate(iter_bam(bamfn, paired_end=paired_end)):
@@ -325,21 +439,29 @@ def process_bam_methylation_data(
             continue
 
         if aln.mapping_quality() < min_mapq:
+            filter_counts['low mapq'] += 1
             continue
         if aln.a.is_unmapped:
+            filter_counts['unmapped'] += 1
             continue
-        metstr = aln.metstr
+        metstr = aln.methylation_values
         if not metstr:
             # malformed bismark data can result in empty metstr
-            #   for otherwise valid alignments
+            #   for apparently valid alignments
             continue
-
+        if drop_methylated_ch_reads and ('H' in metstr or 'X' in metstr or 'U' in metstr):
+            filter_counts['methylated CH'] += 1
+            continue
 
         data_added = False
         for pos, met in aln.locus_methylation.items():
             if met == '.':
                 continue
             if include_unmethylated_ch or met.isupper() or (met.lower() == 'z'):
+                if min_phred and (met in 'zZ') and (aln.locus_quality[pos] < min_phred):
+                    filter_counts['low PHRED CpG'] += 1
+                    continue
+
                 data_added = True
                 # record the locus data
                 current_locus_data['AlignmentIndex'][locus_cursor] = aln_i
@@ -363,6 +485,7 @@ def process_bam_methylation_data(
             read_data['AlignmentIndex'][read_cursor] = aln_i
             read_data['Start'][read_cursor] = aln.reference_start
             read_data['End'][read_cursor] = aln.reference_end
+            read_data['FragmentLength'] = aln.fragment_length
             read_data['MappingQuality'][read_cursor] = aln.mapping_quality()
             read_data['Chrm'][read_cursor] = chrm_map[aln.reference_name]
             read_cursor += 1
@@ -390,9 +513,19 @@ def process_bam_methylation_data(
     logger.info('Finished processing alignments.')
     log_memory_footprint()
 
+
+    locus_data = table2df(locus_table)
+    read_data = table2df(read_table)
+
+
+    locus_data = locus_data.loc[locus_data.AlignmentIndex != 0].reset_index(drop=True)
+    read_data = read_data.loc[read_data.AlignmentIndex != 0].reset_index(drop=True)
+
+    locus_data.loc[:, 'MetCpG'] = locus_data.BismarkCode == 'Z'
+
     process = {
         'name': 'process_bam_methylation_data',
-        'bam_file': str(Path(bamfn).resolve()), # full path
+        'bam_file': str(Path(bamfn).resolve()),  # full path
         'regions_file': str(regions) if regions is not None else None,
         'date_time': str(pd.Timestamp.now()),
         'parameters': {
@@ -403,21 +536,21 @@ def process_bam_methylation_data(
             'include_unmethylated_ch': include_unmethylated_ch,
             'chunk_size': chunk_size,
             'min_mapq': min_mapq,
-        }
+            'min_phred': min_phred,
+            'drop_methylated_ch_reads': drop_methylated_ch_reads,
+        },
+        'total reads': read_data.shape[0],
+        'total positions': locus_data.shape[0],
+        'filter_counts': filter_counts
     }
-    locus_data = table2df(locus_table)
-    read_data = table2df(read_table)
     processes = [process]
 
-    locus_data = locus_data.loc[locus_data.AlignmentIndex != 0].reset_index(drop=True)
-    read_data = read_data.loc[read_data.AlignmentIndex != 0].reset_index(drop=True)
-
-    locus_data.loc[:, 'MetCpG'] = locus_data.BismarkCode == 'Z'
-
-    return MethylationDataset(
+    mdat = MethylationDataset(
         locus_data=locus_data, read_data=read_data,
         processes=processes
     )
+
+    return mdat
 
 
 def write_methylation_tables(
@@ -892,7 +1025,7 @@ twoCHH1z\t2\t1\t104\t22\t10M\t*\t0\t10\tTTCTTCTTTC\tABCDEFGHIJ\tNM:i:tag0\tMD:Z:
     data2 = process_bam_methylation_data(
         bamfn=samfn,
         include_unmethylated_ch=False,
-
+        drop_methylated_ch_reads=True,
         paired_end=False,
     )
 
@@ -910,7 +1043,7 @@ twoCHH1z\t2\t1\t104\t22\t10M\t*\t0\t10\tTTCTTCTTTC\tABCDEFGHIJ\tNM:i:tag0\tMD:Z:
     data3 = process_bam_methylation_data(
         bamfn=samfn,
         include_unmethylated_ch=True,
-
+        drop_methylated_ch_reads=True,
         min_mapq=20,
         paired_end=False,
     )

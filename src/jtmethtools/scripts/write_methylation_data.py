@@ -50,7 +50,8 @@ class ArgsMethylationData:
     ))
     regions: Path = field(default=None, metadata=dict(
         help='Alignments that overlap with regions will be written to the table. '
-             'If not provided (default), all alignments will be written.',
+             'If not provided (default), all alignments will be written. Note that using samtools to pre-filter'
+             ' the BAM is much faster.',
         aliases=['-r']
     ))
     # either --se or --pe for sing/paired end
@@ -59,7 +60,7 @@ class ArgsMethylationData:
         aliases=['--single-end']
     ))
     pe: bool = field(default=False, metadata=dict(
-        help='See --se.',
+        help='See help for --se.',
         aliases=['--paired-end']
     ))
     all_chrm: bool = field(default=False, metadata=dict(
@@ -72,9 +73,17 @@ class ArgsMethylationData:
              'only methylated CH are included.',
         aliases = ['-c', '--ch']
     ))
-    min_mapq: int = field(default=20, metadata=dict(
-        help='Minimum mapping quality to include read. Default is 20.',
+    drop_mch_reads: bool = field(default=False, metadata=dict(
+        help='Set to drop reads with any methylated CpH. By default, these are included.',
+        aliases=['-d']
+    ))
+    min_mapq: int = field(default=0, metadata=dict(
+        help='Minimum mapping quality to include read. Default is 0, no filtering.',
         aliases=['-m']
+    ))
+    min_phred: int = field(default=0, metadata=dict(
+        help='Minimum phred quality to include a CpG. Default is 0, no filtering.',
+        aliases=['-p']
     ))
     quiet: bool = field(default=False, metadata=dict(
         help='Set to silence info messages printed to STDOUT. Log file created either way.',
@@ -125,7 +134,8 @@ def bam_to_parquet(args:ArgsMethylationData):
         include_unmethylated_ch=args.unmethylated_ch,
         chunk_size=int(1e6),
         min_mapq=args.min_mapq,
-
+        min_phred=args.min_phred,
+        drop_methylated_ch_reads=args.drop_mch_reads
     )
 
     MethylationDataset(

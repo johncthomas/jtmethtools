@@ -1,5 +1,6 @@
 """Class and functions for working with Bismark BAM."""
-
+import collections
+import typing
 from typing import Collection, Tuple, Literal, Iterable
 
 import pandas as pd
@@ -235,7 +236,7 @@ class Alignment:
     kind: Literal['bismark'] = 'bismark'
     filename: str = ''
     phred_offset: int = -33
-    prefer_R1: bool = False
+    prefer_R1: bool = True
     """If True, locus_* properties will use read 1 for shared loci in paired alignments."""
     use_quality_profile:bool = False
     """ If True, locus_* properties will infer a PHRED score using both reads where they overlap.
@@ -247,6 +248,38 @@ class Alignment:
         else:
             raise NotImplementedError("Only bismark alignments are currently supported.")
 
+    @property
+    def R1(self) -> AlignedSegment:
+        return self.a if self.a.is_read1 else self.a2
+    @property
+    def R2(self) -> AlignedSegment:
+        return self.a2 if self.a.is_read1 else self.a
+
+    def get_fwd_rev(self):
+        """Returns the forward and reverse reads"""
+        # if self.a.is_forward == self.a2.is_forward:
+        #     logger.warning("Reads in same orientation, returned fwd/rev order is arbitrary.", )
+        # actually that could cause a billion useless warnings depending on the sequencing technology
+        fwd, rev = (self.a2, self.a) if self.a.is_reverse else (self.a, self.a2)
+        return fwd, rev
+
+    @property
+    def segments(self) -> tuple[AlignedSegment, ...]:
+        """Returns the two AlignedSegments in the Alignment."""
+        return (self.a, self.a2) if self.a2 is not None else (self.a,)
+
+    @property
+    def fragment_is_plus(self) -> bool:
+        """True if original fragment maps to the plus strand."""
+        if self.R1.is_forward:
+            return False
+        else:
+            return True
+
+    @property
+    def fragment_is_minus(self) -> bool:
+        """True if original fragment maps to the minus strand."""
+        return not self.fragment_is_plus
 
     def _has_metstr(self):
         """Checks both alignments for valid methylation strings"""
@@ -326,7 +359,7 @@ class Alignment:
                 methylations[r_pos] = self._get_met_str(self.a)[q_pos]
         else: # it's a paired alignment
             if self.use_quality_profile:
-                from jtmethtools._quality_profiles import  quality_profile_match_41, quality_profile_mismatch_41
+                from jtmethtools.quality_profiles import quality_profile_match_41, quality_profile_mismatch_41
             else:
                 quality_profile_match_41, quality_profile_mismatch_41 = None, None
 
@@ -423,19 +456,91 @@ class Alignment:
 
         return LocusValues(qualities=sorted_phreds, nucleotides=sorted_nucleotides, methylations=sorted_methylations)
 
+    @property
+    def fragment_length(self) -> typing.Union[int, Literal[np.nan]]:
+        """Fragment length from the 5' ends of a read pair (cfDNAPro convention).
+
+        Returns the distance from the 5' end of the forward-strand mate to the
+        5' end of the reverse-strand mate. Unlike the outer span (or BAM TLEN),
+        this stays correct for dovetailed pairs, where a fragment shorter than
+        the read length causes each mate to run past the other's 5' end.
+
+        Returns np.nan if the pair can't yield a meaningful length.
+        """
+        a, b = self.a, self.a2
+        if b is None:
+            return np.nan
+
+        # Both mates must be mapped; reference_end is None for unmapped reads
+        # and for reads whose CIGAR consumes no reference.
+        if a.is_unmapped or b.is_unmapped:
+            return np.nan
+        if a.reference_end is None or b.reference_end is None:
+            return np.nan
+
+        # Same chromosome, opposite orientation (FR or RF).
+        if a.is_reverse == b.is_reverse:
+            return np.nan
+
+        fwd, rev = self.get_fwd_rev()
+
+        # reference_start is 0-based inclusive, reference_end 0-based exclusive,
+        # so the difference is the span directly — no +1.
+        length = rev.reference_end - fwd.reference_start
+
+        # Outward-facing pairs give a negative or degenerate span.
+        if length <= 0:
+            return np.nan
+
+        return length
+
+    @property
+    def fragment_start_end(self) -> tuple[int, int]:
+        """Fragment start end position in reference positions, correcting for readthroughs.
+        Where reads dovetail outwards, the overlapping span is used.
+        See https://doi.org/10.1186/s13059-025-03607-5"""
+
+        fwd, rev = self.get_fwd_rev()
+
+        if fwd.reference_start > rev.reference_start:
+            start = rev.reference_start
+        else:
+            start = min(fwd.reference_start, rev.reference_start)
+
+        if rev.reference_end > fwd.reference_end:
+            end = rev.reference_end
+        else:
+            end = max(fwd.reference_id, rev.reference_end)
+
+        return start, end
+
+    @property
+    def methylation_values(self) -> list[str]:
+        """Methylation values, in reference position order, without worrying about missing
+        positions."""
+        return list(self.locus_methylation.values())
 
     @property
     def metstr(self) -> str:
-        """String of methylation states using the Bismark convention, ordered by reference position."""
-        return ''.join(self.locus_methylation.values())
+        """String of methylation states using the Bismark convention, merging both
+         reads if paired, ordered by reference position. Gaps are represented by '-'.
+         Non-reference positions are excluded.
+         """
 
-    @property
-    def alignments(self) -> Tuple[AlignedSegment]:
-        if self.a2 is None:
-            alignments = (self.a,)
-        else:
-            alignments = (self.a, self.a2)
-        return alignments
+        metstr = []
+        locs = list(self.locus_methylation.keys())
+        locs = [x for x in locs if x is not None]
+
+        # met = [x[1] for x in loc_met]
+
+        start = min(locs)
+        for pos in range(start, max(locs) + 1):
+            m = self.locus_methylation.get(pos, None)
+            if m is None:
+                metstr.append('-')
+            else:
+                metstr.append(m)
+        return ''.join(metstr)
 
     @property
     def reference_name(self) -> str:
@@ -464,26 +569,17 @@ class Alignment:
         """Mapping quality of the alignment."""
         return self.a.mapping_quality
 
-    # def _iter_locus_metstr_bismark(self, a: AlignedSegment) -> Tuple[int, bool]:
-    #     """Iterate through the bismark methylation string, yielding
-    #     the chromosomal position of current CpG and it's methylation
-    #     state (True if methylated)
-    #     """
-    #     met_str = self._get_met_str(a)
-    #     for i, m in enumerate(met_str):
-    #         if m in 'zZ':
-    #             locus = get_ref_position(i, a.reference_start, a.cigartuples)
-    #
-    #             if locus is None:
-    #                 continue
-    #             locus += 1
-    #             yield locus, m == 'Z'
+
+    def mCH(self) -> int:
+        """Count number of methylated CH."""
+        x = collections.Counter(self.methylation_values)
+        return x['H'] + x['X'] + x['U']
 
     def _no_non_cpg(self) -> bool:
         """look for forbidden methylation states.
 
         Return True if there's no H|X|U."""
-        values = set(self.metstr)
+        values = set(self.methylation_values)
         if (
                 ('H' in values)
                 or ('X' in values)
@@ -501,7 +597,7 @@ class Alignment:
 
         Returns an empty list if it doesn't overlap any region."""
         regions = [alignment_overlaps_region(a, regions)
-                   for a in self.alignments]
+                   for a in self.segments]
         regions = list(set([r for r in regions if r]))
         return regions
 
@@ -615,10 +711,16 @@ def iter_bam(
         bam:str|Path|AlignmentFile,
         paired_end:bool=True,
         kind='bismark',
+        min_mapq:int=0,
+        max_mCH:int=None,
 ) -> Iterable[Alignment]:
     """Iterate over a bam file, yielding Alignments."""
 
     for aln in iter_bam_segments(bam, paired_end,):
-        yield Alignment(*aln, kind=kind)
+        aln = Alignment(*aln, kind=kind)
+        if min_mapq and aln.mapping_quality() < min_mapq:
+            continue
+        if max_mCH is not None and aln.mCH() > max_mCH:
+            continue
+        yield aln
     return None
-

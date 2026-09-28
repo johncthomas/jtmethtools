@@ -53,7 +53,7 @@ def remove_ch_methylation(bam_file: Path | str, output_file: Path | str,
                     continue
 
                 # Find symbols in met_str that overlap with bad symbols
-                #   .isdisjoint chosen after some benchmarking.
+                #   This method chosen after some benchmarking.
                 if not set_met.isdisjoint(ch_meth_symbols):
                     has_mCH = True
                     break
