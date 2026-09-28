@@ -6,7 +6,7 @@ from copy import copy
 """Plot strings of pearl style representations of methylation reads.
 """
 
-__all__ = ["MethylationPearls"]
+__all__ = ["MethylationPearlFig"]
 
 
 class MethylationPearlFig:
